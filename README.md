@@ -6,7 +6,7 @@
 
 **第三方客户端 · Rust + Tauri 2**
 
-Windows / macOS / Linux / Android / iOS · Fluent 设计 · 沉浸式竖屏播放
+Windows / macOS / Linux / Android / iOS · iOS 圆角与玻璃材质 · 沉浸式竖屏播放
 
 </div>
 

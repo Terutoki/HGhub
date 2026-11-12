@@ -12,6 +12,8 @@
     "test:api-loading": "node scripts/test-api-loading.mjs",
     "test:channel-pagination": "node scripts/test-channel-pagination.mjs",
     "test:mobile-layout": "node scripts/test-mobile-layout.mjs",
+    "test:ios-ui": "node scripts/test-ios-ui.mjs",
+    "test:ios-overlays": "node scripts/test-ios-overlays.mjs",
     "test:diagnostic-copy": "node scripts/test-diagnostic-copy.mjs",
     "test:storage-migration": "node scripts/test-storage-migration.mjs",
     "tauri": "tauri",

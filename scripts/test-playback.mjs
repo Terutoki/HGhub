@@ -84,13 +84,74 @@ async function loadPlayer(page, legacy = false, extra = "") {
   await page.goto(`${report.ui}/tests/player-seek.html?diagnostics=1&proxy=${encodeURIComponent(report.media)}${legacy ? "&legacy=1" : ""}${extra}`);
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 1);
 }
+async function speedMenuKeyboardChecks(page, paused) {
+  const trigger = page.getByRole("button", { name: "倍速", exact: true });
+  const menu = page.getByRole("menu", { name: "播放速度", exact: true });
+  const assertFocus = async selector => {
+    await page.waitForFunction(selector => document.activeElement === document.querySelector(selector), selector);
+  };
+  const assertMediaState = async () => {
+    assert.equal(await page.locator("video").evaluate(video => video.paused), paused, "Menu keys must preserve playback pause state");
+  };
+  const open = async key => {
+    await trigger.focus();
+    await page.keyboard.press(key);
+    await menu.waitFor({ state: "visible" });
+    await assertFocus('.player-speed-menu [aria-checked="true"]');
+    await assertMediaState();
+  };
+  const assertSelection = async rate => {
+    await page.waitForFunction(rate => document.querySelector("video").playbackRate === rate, rate);
+    await menu.waitFor({ state: "detached" });
+    await assertFocus(".player-speed");
+    await assertMediaState();
+  };
+
+  // These keys reach the real Feed, so leaking Space would toggle the video.
+  await open("Space");
+  await page.keyboard.press("Home");
+  await assertFocus('.player-speed-menu button:first-of-type');
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator(":focus").innerText(), "0.75x");
+  await page.keyboard.press("End");
+  await assertFocus('.player-speed-menu button:last-of-type');
+  await page.keyboard.press("ArrowUp");
+  assert.equal(await page.locator(":focus").innerText(), "1.5x");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Space");
+  await assertSelection(2);
+
+  await open("Enter");
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await assertSelection(.75);
+
+  await open("Space");
+  await page.keyboard.press("Escape");
+  await assertSelection(.75);
+
+  await open("Enter");
+  await page.keyboard.press("Tab");
+  await menu.waitFor({ state: "detached" });
+  await assertFocus(".player-volume > button");
+  await assertMediaState();
+
+  // Restore normal speed without mouse activation and preserve a useful focus.
+  await open("Space");
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await assertSelection(1);
+}
 async function seekChecks(page, legacy) {
   await loadPlayer(page, legacy);
   await clickProgress(page, .1);
   assert.equal((await getLogs(page)).length, 0, "Default-off must not record seeks");
   await page.getByRole("button", { name: "诊断设置", exact: true }).click();
-  await page.getByRole("button", { name: "播放诊断日志", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('[aria-label="播放诊断日志"]').getAttribute("aria-pressed") === "true");
+  await page.getByRole("switch", { name: "播放诊断日志", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="播放诊断日志"]').getAttribute("aria-checked") === "true");
   await page.getByRole("button", { name: "诊断设置", exact: true }).click();
   await clickProgress(page, .8);
   let logs = await waitLog(page, "seek.resumed");
@@ -129,6 +190,8 @@ async function seekChecks(page, legacy) {
     }
   }
 
+  if (!legacy) await speedMenuKeyboardChecks(page, false);
+
   await page.getByRole("button", { name: "暂停", exact: true }).click();
   await clickProgress(page, .6);
   logs = await waitLog(page, "seek.ready");
@@ -139,6 +202,7 @@ async function seekChecks(page, legacy) {
   await page.waitForFunction(n => window.playerSeekFixture.logs.slice(n).some(e => e.event === "seek.ready"), keyboardBefore);
   assert((await getLogs(page)).slice(keyboardBefore).some(e => e.event === "seek.request" && e.data.source.endsWith("_keyboard")), "Native keyboard seek must still work");
   assert(await page.locator("video").evaluate(v => v.paused), "Keyboard seek must preserve pause");
+  if (!legacy) await speedMenuKeyboardChecks(page, true);
 
   // Page changes during capture must cancel the preview rather than seek the hidden player.
   const cancelledBefore = (await getLogs(page)).length;
@@ -164,7 +228,8 @@ async function seekChecks(page, legacy) {
   assert(rejected, "Failed persistence must reject");
   await clickProgress(page, .3);
   assert.equal((await getLogs(page)).length, count, "Failed persistence must keep logging disabled");
-  return { click_ms: logs.find(e => e.event === "seek.resumed" && e.data.seek === first.data.seek)?.data.elapsed_ms, drag_requests: drags.length };
+  return { click_ms: logs.find(e => e.event === "seek.resumed" && e.data.seek === first.data.seek)?.data.elapsed_ms, drag_requests: drags.length,
+    ...(!legacy ? { speed_menu_keyboard: { playing_preserved: true, paused_preserved: true, activation: ["Space", "Enter"], navigation: ["ArrowUp", "ArrowDown", "Home", "End"], exit: ["Escape", "Tab"], focus_restored: true } } : {}) };
 }
 async function stallCheck(page) {
   await loadPlayer(page);

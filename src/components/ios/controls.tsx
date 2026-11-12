@@ -1,0 +1,44 @@
+import { forwardRef, type ButtonHTMLAttributes, type FormHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { cn } from "../../cn";
+
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+};
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
+  children, className = "", type = "button", variant, disabled, ...props
+}, ref) {
+  const intent = variant ?? (/(^|\s)(bg-primary|brand-grad)(\s|$)/.test(className) ? "primary" : "ghost");
+  const card = /(?:paddingTop|aspect)/.test(JSON.stringify(props.style)) || /(?:ios-poster|ios-row-card|ios-rank-row)/.test(className);
+  return <button {...props} ref={ref} type={type} disabled={disabled}
+    data-ui="button" data-variant={intent} data-card={card || undefined}
+    className={cn("ios-button", `ios-button-${intent}`, className)}>
+    {children}
+  </button>;
+});
+
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...props }, ref) {
+  return <input {...props} ref={ref} aria-label={props["aria-label"] ?? props.placeholder}
+    data-ui={props.type === "range" ? "range" : "input"}
+    className={cn(props.type === "range" ? "ios-range" : "ios-input", className)} />;
+});
+export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea({ className, ...props }, ref) {
+  return <textarea {...props} ref={ref} aria-label={props["aria-label"] ?? props.placeholder} data-ui="textarea" className={cn("ios-input ios-textarea", className)} />;
+});
+export const Surface = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(function Surface({ children, className, ...props }, ref) {
+  return <div {...props} ref={ref} className={cn("ios-surface", className)} data-ui="surface">
+    {children}
+  </div>;
+});
+export function SegmentedControl({ children, className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} className={cn("ios-segmented", className)} role={props.role ?? "group"} aria-label={props["aria-label"] ?? "切换内容"}>{children}</div>;
+}
+
+export const Form = forwardRef<HTMLFormElement, FormHTMLAttributes<HTMLFormElement>>(function Form({ children, className, ...props }, ref) {
+  return <form {...props} ref={ref} className={cn("ios-form", className)}>
+    {children}
+  </form>;
+});
+
+export const Image = forwardRef<HTMLImageElement, ImgHTMLAttributes<HTMLImageElement>>(function Image({ alt = "", decoding = "async", ...props }, ref) {
+  return <img {...props} ref={ref} alt={alt} decoding={decoding} data-ui="image" />;
+});

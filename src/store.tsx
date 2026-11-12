@@ -124,7 +124,9 @@ function loadPersist(): Persist {
 
 function readTheme(): Theme {
   try {
-    return readStorage(STORAGE_KEYS.theme) === "light" ? "light" : "dark";
+    const saved = readStorage(STORAGE_KEYS.theme);
+    if (saved === "light" || saved === "dark") return saved;
+    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   } catch {
     return "dark";
   }
@@ -133,6 +135,7 @@ function readTheme(): Theme {
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("theme-light", theme === "light");
   document.documentElement.style.colorScheme = theme;
+  document.documentElement.dataset.theme = theme;
 }
 
 type Store = {
