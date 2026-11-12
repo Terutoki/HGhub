@@ -10,8 +10,6 @@ import { IBack, IChevR, IGlobe, IGrid, ISearch, ITrophy } from "../icons";
 export const CHANNELS = [
   { cate: "ai-duanju", name: "AI成人短剧", desc: "高能反转 · 一口气看完" },
   { cate: "ai-manju", name: "AI成人漫剧", desc: "国创漫剧 · 每周更新" },
-  { cate: "ai-huanlian", name: "AI换脸", desc: "换脸演绎 · 全新剧情" },
-  { cate: "ai-mogai", name: "AI魔改", desc: "魔改名场面 · 脑洞大开" },
 ] as const;
 
 /* ================= 分类总览 ================= */
