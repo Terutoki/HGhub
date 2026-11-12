@@ -61,7 +61,7 @@ const READ_ONLY = new Set([
   "api_me", "api_feed", "api_original_videos", "api_category", "api_rank", "api_search",
   "api_posts", "api_post", "api_post_comments", "api_video", "api_play", "api_comments",
   "api_topics", "api_topic", "api_tags", "api_tag_videos", "api_search_hot",
-  "api_post_playback", "api_post_categories", "api_post_category", "api_posts_tag", "api_related", "api_following", "api_user", "api_user_stats", "api_user_videos",
+  "api_post_playback", "api_post_categories", "api_post_category", "api_related", "api_following", "api_user", "api_user_stats", "api_user_videos",
 ]);
 /** 给自动选线用的观察点。api.ts 不反向依赖 autoLine，避免循环 import。 */
 export type NetObserver = (r: { ok: boolean; cmd: string; msg?: string; networkish?: boolean }) => void;
@@ -176,8 +176,6 @@ export const api = {
   postCategories: () => call<{ items: PostCategory[] }>("api_post_categories"),
   postCategory: (route: string, page = 1, size = 20, sort?: string) =>
     call<Paged<Post>>("api_post_category", { route, page, size, sort: sort ?? null }),
-  postsTag: (tag: string, page = 1, size = 20) =>
-    call<Paged<Post>>("api_posts_tag", { tag, page, size }),
   related: (id: number) => call<{ items: VideoCard[] }>("api_related", { id }),
   following: (page = 1, size = 20) => call<Paged<VideoCard>>("api_following", { page, size }),
   user: (id: number) => call<UserProfile>("api_user", { id }),

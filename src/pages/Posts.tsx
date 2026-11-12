@@ -9,19 +9,10 @@ import { IBack, IFireF, IPlayF, ISearch } from "../icons";
 import { handleArticleClick, sanitizeHtml } from "../html";
 import { InplaceSearch } from "../components/InplaceSearch";
 
-/* 博客频道：默认最新列表；顶部两个子频道按官网结构。 */
-const BLOG_TABS = [
-  { key: "gossip", name: "黑料吃瓜" },
-  { key: "reviews", name: "短剧剧评" },
-] as const;
-const BLOG_LATEST = "latest";
-
-/* ================= 博客列表 ================= */
+/* ================= 吃瓜列表 ================= */
 export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean }) {
   const { push } = useStore();
   const [searching, setSearching] = useState(false);
-  const [cat, setCat] = useState<string>(BLOG_LATEST);
-  const latest = cat === BLOG_LATEST;
   const [items, setItems] = useState<Post[]>([]);
   const [page, setPage] = useState(0);
   const [pages, setPages] = useState(1);
@@ -36,11 +27,7 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
     busy.current = true;
     setLoading(true);
     try {
-      const res = latest
-        ? await api.posts(next, 20, "latest")
-        : cat === "reviews"
-          ? await api.postsTag("黄果原创", next, 20)
-          : await api.postCategory("remen-chigua", next, 20);
+      const res = await api.postCategory("remen-chigua", next, 20, "latest");
       setItems((prev) => {
         const base = reset ? [] : prev;
         const seen = new Set(base.map((x) => x.id));
@@ -54,15 +41,7 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
     }
   };
 
-  const pickCat = (route: string) => {
-    if (route === cat) return;
-    setCat(route);
-    setItems([]);
-    setPage(0);
-    setPages(1);
-  };
-
-  useEffect(() => { loadMore(true); /* eslint-disable-next-line */ }, [cat]);
+  useEffect(() => { loadMore(true); /* eslint-disable-next-line */ }, []);
   useEffect(() => {
     const el = sentinel.current;
     if (!el) return;
@@ -70,29 +49,15 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
     io.observe(el);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pages, cat]);
+  }, [page, pages]);
 
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-2 bg-s1" style={{ paddingTop: "var(--sat, 0px)" }}>
         <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={19} /></button>
-        <span className="text-[14px] font-bold text-on">博客</span>
-        {latest ? (
-          <span className="text-[10.5px] text-mut ml-1">黑料吃瓜 · 短剧剧评</span>
-        ) : (
-          <button onClick={() => pickCat(BLOG_LATEST)} className="text-[10.5px] text-primary ml-1 pressable">返回最新</button>
-        )}
-        <button onClick={() => setSearching(true)} aria-label="搜索博客" className="ml-auto w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
-      </div>
-      <div className="shrink-0 flex gap-1 mx-4 my-2.5 p-1 rounded-(--r-ctl) bg-s3">
-        {BLOG_TABS.map((tab) => {
-          const active = cat === tab.key;
-          return (
-            <button key={tab.key} onClick={() => pickCat(tab.key)}
-              className={`flex-1 h-8 rounded-(--r-sm) text-[12px] font-semibold pressable ${active ? "tonal text-on-sec" : "text-mut"}`}
-              style={active ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{tab.name}</button>
-          );
-        })}
+        <span className="text-[14px] font-bold text-on">吃瓜</span>
+        <span className="text-[10.5px] text-mut ml-1">圈内爆料 · 每日更新</span>
+        <button onClick={() => setSearching(true)} aria-label="搜索吃瓜" className="ml-auto w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
       </div>
       <div className="flex-1 scroll-y px-3 pt-3 pb-8">
         {items.length ? (
@@ -115,17 +80,19 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
         ) : loading ? (
           <div className="flex justify-center py-12"><div className="w-8 h-8 spinner" /></div>
         ) : (
-          <Empty icon={<IFireF size={26} />} title={latest ? "暂无博客内容" : cat === "reviews" ? "暂无短剧剧评" : "暂无黑料吃瓜内容"} sub="稍后再来看看" />
+          <Empty icon={<IFireF size={26} />} title="暂无吃瓜内容" sub="稍后再来看看" />
         )}
         <div ref={sentinel} className="h-10" />
         {loading && <div className="flex justify-center py-2"><div className="w-6 h-6 spinner" /></div>}
       </div>
-      {searching && <InplaceSearch kind="post" postLabel="博客帖子" wide={wide} onClose={() => setSearching(false)} onOpenPost={(p) => push({ kind: "post", id: p.id })} />}
+      {searching && <InplaceSearch kind="post" postLabel="吃瓜帖子" wide={wide} onClose={() => setSearching(false)} onOpenPost={(p) => push({ kind: "post", id: p.id })} />}
     </div>
   );
 }
 
 const isHtml = (s: string) => /<(p|div|br|img|h[1-6]|ul|ol|li|blockquote|span|strong|em)\b/i.test(s);
+/* 过滤上游旧品牌标签，避免显示到界面。 */
+const HIDDEN_POST_TAG = "\u9ec4\u679c";
 
 /* ================= 吃瓜详情（网页式浏览） ================= */
 export function PostDetail({ id, onBack, active = true }: { id: number; onBack: () => void; active?: boolean }) {
@@ -176,7 +143,7 @@ export function PostDetail({ id, onBack, active = true }: { id: number; onBack: 
     <div className="absolute inset-0 bg-bg flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-2 bg-s1" style={{ paddingTop: isMobile ? "var(--sat, 0px)" : 0, height: isMobile ? "calc(44px + var(--sat, 0px))" : 44 }}>
         <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={19} /></button>
-        <span className="text-[13.5px] font-semibold text-on">博客详情</span>
+        <span className="text-[13.5px] font-semibold text-on">吃瓜详情</span>
       </div>
 
       <div className="flex-1 scroll-y pb-8">
@@ -227,7 +194,7 @@ export function PostDetail({ id, onBack, active = true }: { id: number; onBack: 
                 <span className="flex items-center gap-1"><IFireF size={10} />{fmt(post.hot)}</span>
               </div>
               <div className="flex flex-wrap gap-1.5 mt-2.5">
-                {(post.tags || []).slice(0, 8).map((t) => (
+                {(post.tags || []).filter((t) => !t.includes(HIDDEN_POST_TAG)).slice(0, 8).map((t) => (
                   <span key={t} className="px-2 py-0.5 rounded-(--r-ctl) bg-s3 text-[10.5px] text-on/75">#{t}</span>
                 ))}
               </div>

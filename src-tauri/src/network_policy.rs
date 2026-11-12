@@ -239,7 +239,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let dir =
-            std::env::temp_dir().join(format!("hghub-security-{}-{unique}", std::process::id()));
+            std::env::temp_dir().join(format!("hghubx-security-{}-{unique}", std::process::id()));
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("security.json");
         let previous = SECURITY_FILE.write().unwrap().replace(path.clone());
@@ -370,20 +370,20 @@ mod tests {
 
     #[test]
     fn relaxed_mode_and_cli_flags_work_without_exposing_internal_hosts() {
-        assert_eq!(parse_strict_override(["hghub"], None), None);
+        assert_eq!(parse_strict_override(["hghubx"], None), None);
         assert_eq!(
-            parse_strict_override(["hghub", "--no-strict"], None),
+            parse_strict_override(["hghubx", "--no-strict"], None),
             Some(false)
         );
         assert_eq!(
-            parse_strict_override(["hghub", "--no-strict-security"], None),
+            parse_strict_override(["hghubx", "--no-strict-security"], None),
             Some(false)
         );
         assert_eq!(
-            parse_strict_override(["hghub", "--no-strict", "--strict"], None),
+            parse_strict_override(["hghubx", "--no-strict", "--strict"], None),
             Some(true)
         );
-        assert_eq!(parse_strict_override(["hghub"], Some("0")), Some(false));
+        assert_eq!(parse_strict_override(["hghubx"], Some("0")), Some(false));
         assert!(parse_target_with_mode("http://10.0.0.1/video.m3u8", false).is_ok());
         assert!(parse_target_with_mode("http://nas.local/video.m3u8", false).is_ok());
         assert!(parse_target_with_mode("http://tauri.localhost/", false).is_err());

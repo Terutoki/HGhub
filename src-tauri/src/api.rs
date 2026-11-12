@@ -151,7 +151,7 @@ pub async fn line_try_main() -> Result<Value, String> {
 
 /* ───────────────────────── 更新检查 ───────────────────────── */
 
-const REPO: &str = "zxsos/HGhub";
+const REPO: &str = "zxsos/HGhubX";
 
 fn ver_parts(v: &str) -> Vec<u64> {
     v.trim()
@@ -176,7 +176,7 @@ fn is_newer(latest: &str, current: &str) -> bool {
 
 /// 从 tag / name 里取出 `x.y.z`。
 ///
-/// 我们的 tag 是 `hgfix-1.2.1-r5`，上游是 `v1.2.0`，release name 是 `HGhub 1.2.1+hg.1`。
+/// 我们的 tag 是 `hgfix-1.2.1-r5`，上游是 `v1.2.0`，release name 是 `HGhubX 1.2.1+hg.1`。
 /// 直接拿去比会从第一位就判负（`hgfix-1` 解析成 0），所以先抠出版本号。
 fn version_in(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
@@ -928,20 +928,6 @@ pub async fn api_post_category(
         .await
 }
 
-/// 按标签取帖子（短剧剧评 = tag「黄果原创」）：`/api/posts/tag/{tag}`，返回与帖子列表同构。
-#[tauri::command]
-pub async fn api_posts_tag(
-    state: State<'_, Api>,
-    tag: String,
-    page: u32,
-    size: u32,
-) -> Result<Value, String> {
-    let encoded: String = url::form_urlencoded::byte_serialize(tag.as_bytes()).collect();
-    state
-        .get(&format!("/api/posts/tag/{encoded}?page={page}&size={size}"))
-        .await
-}
-
 /// 相关推荐：`/api/videos/{id}/related` 返回 data.items。
 #[tauri::command]
 pub async fn api_related(state: State<'_, Api>, id: i64) -> Result<Value, String> {
@@ -1043,7 +1029,7 @@ mod tests {
     fn reads_version_out_of_tag() {
         assert_eq!(version_in("hgfix-1.2.1-r5"), "1.2.1");
         assert_eq!(version_in("v1.2.0"), "1.2.0");
-        assert_eq!(version_in("HGhub 1.2.1+hg.1"), "1.2.1");
+        assert_eq!(version_in("HGhubX 1.2.1+hg.1"), "1.2.1");
         assert_eq!(version_in("release-notes"), "");
         assert!(is_newer(&version_in("hgfix-1.2.2-r6"), "1.2.1+hg.1"));
         assert!(is_newer(&version_in("hgfix-1.10.0-r9"), "1.9.9+hg.1"));

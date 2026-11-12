@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 照上游 Minireel/HGhub scripts/build-ios-unsigned.sh 重写（9ca6972）。
+# 照上游 Minireel/HGhubX scripts/build-ios-unsigned.sh 重写（9ca6972）。
 # 关键点：不再用 cargo 直出静态库 + -Wl,-undefined,dynamic_lookup，
 # 而是让 tauri ios build 的 options server 活着，由 Xcode 自己跑 Build Rust Code，
 # 并把 Swift 兼容库目录指到 Xcode toolchain 里（Xcode 26 挪了位置）。
@@ -36,7 +36,7 @@ if [[ ! -s "$ADDR_FILE" ]]; then
   exit 1
 fi
 
-# 工程名 / scheme 动态取（我们的 productName 是 HGhub，上游是 huangguo-client）
+# 工程名 / scheme 动态取（我们的 productName 是 HGhubX）
 PROJECT="$(cd src-tauri/gen/apple && ls -d *.xcodeproj | head -1)"
 SCHEME="$(cd src-tauri/gen/apple && xcodebuild -list -project "$PROJECT" 2>/dev/null | awk '/Schemes:/{f=1;next} f&&NF{print $1;exit}')"
 if [[ -z "$PROJECT" || -z "$SCHEME" ]]; then
@@ -82,7 +82,7 @@ fi
 PACKAGE_DIR=$(mktemp -d)
 mkdir -p "$PACKAGE_DIR/Payload"
 cp -R "$APP" "$PACKAGE_DIR/Payload/"
-IPA="$ROOT/artifacts/HGhub_${VERSION}_ios.ipa"
+IPA="$ROOT/artifacts/HGhubX_${VERSION}_ios.ipa"
 (cd "$PACKAGE_DIR" && zip -qr "$IPA" Payload)
 unzip -tq "$IPA"
 ls -lh "$IPA"

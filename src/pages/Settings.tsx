@@ -248,14 +248,14 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
             <button onClick={() => setAbout(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
               <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IInfo size={16} /></span>
               <div className="flex-1">
-                <div className="text-[12.5px] text-on">关于 HGhub</div>
+                <div className="text-[12.5px] text-on">关于 HGhubX</div>
                 <div className="text-[10.5px] text-mut">版本 {APP_VERSION} · 仅限非商业使用</div>
               </div>
               <IChevR size={15} className="text-mut" />
             </button>
           </Section>
 
-          <div className="text-center text-[10px] text-dim mt-5">HGhub {APP_VERSION} · {platform === "android" ? "Android" : platform === "ios" ? "iOS" : platform === "macos" ? "macOS" : platform === "linux" ? "Linux" : "Windows"} 客户端</div>
+          <div className="text-center text-[10px] text-dim mt-5">HGhubX {APP_VERSION} · {platform === "android" ? "Android" : platform === "ios" ? "iOS" : platform === "macos" ? "macOS" : platform === "linux" ? "Linux" : "Windows"} 客户端</div>
         </div>
       </div>
 
@@ -283,8 +283,8 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           <div className="flex items-center gap-3">
             <span className="w-11 h-11 rounded-(--r-sm) brand-grad glow-neon flex items-center justify-center text-on-primary text-[17px] font-black">H</span>
             <div>
-              <div className="text-[16px] font-bold text-on leading-tight">HGhub</div>
-              <div className="text-[11px] text-mut mt-0.5">黄果短剧 · 第三方客户端 v{APP_VERSION}</div>
+              <div className="text-[16px] font-bold text-on leading-tight">HGhubX</div>
+              <div className="text-[11px] text-mut mt-0.5">HGhubX 客户端 v{APP_VERSION}</div>
             </div>
           </div>
 
@@ -299,10 +299,10 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           </div>
 
           <div className="mt-4 divide-y divide-s3">
-            <button onClick={() => { api.openUrl("https://github.com/zxsos/HGhub").catch(() => { copyText("https://github.com/zxsos/HGhub").then(() => toast("仓库地址已复制", "ok")).catch(() => {}); }); }}
+            <button onClick={() => { api.openUrl("https://github.com/zxsos/HGhubX").catch(() => { copyText("https://github.com/zxsos/HGhubX").then(() => toast("仓库地址已复制", "ok")).catch(() => {}); }); }}
               className="w-full flex items-center gap-2 py-2.5 text-left pressable">
               <ILink size={15} className="text-mut" />
-              <span className="text-[12px] text-on/85">github.com/zxsos/HGhub</span>
+              <span className="text-[12px] text-on/85">github.com/zxsos/HGhubX</span>
               <span className="ml-auto text-[10.5px] text-primary">复制</span>
             </button>
             <button onClick={() => { copyText("https://huangguoai.com").then(() => toast("站点地址已复制", "ok")).catch(() => {}); }}
