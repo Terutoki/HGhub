@@ -40,13 +40,17 @@ try {
     page2: window.channelPaginationFixture.page2,
   }));
   const titles = async () => page.locator(".grid > div .clamp-2").allInnerTexts();
-  const expectedPage = (list, key) => [...list]
-    .sort((a, b) => key === "hot" ? (b.hot - a.hot) : key === "score" ? (b.score - a.score) : (b.id - a.id))
-    .map(v => v.title);
+  const expectedPage = (list, sort) => {
+    const arr = [...list];
+    if (sort === "hot_window") arr.sort((a, b) => b.hot - a.hot);
+    else if (sort === "random") arr.sort((a, b) => (a.id % 13) - (b.id % 13));
+    else arr.sort((a, b) => b.id - a.id);
+    return arr.map(v => v.title);
+  };
   const scroller = page.locator(".scroll-y").last();
   const before = await titles();
   assert.equal(before.length, 20, "First page must show 20 cards");
-  assert.deepEqual(before, expectedPage(fixture.page1, "id"), "First page must be sorted by id within page 1");
+  assert.deepEqual(before, expectedPage(fixture.page1, "latest"), "First page must follow server latest order");
 
   await scroller.evaluate(el => { el.scrollTop = el.scrollHeight; });
   await page.waitForFunction(() => window.channelPaginationFixture.history.length === 2);
@@ -59,19 +63,25 @@ try {
   const scrollAfter = await scroller.evaluate(el => ({ top: el.scrollTop, height: el.clientHeight, scrollHeight: el.scrollHeight }));
   assert.equal(after.length, 40, "Second page must append all cards");
   assert.deepEqual(after.slice(0, 20), before, "All page 1 cards must remain above page 2 cards");
-  assert.deepEqual(after.slice(20), expectedPage(fixture.page2, "id"), "Page 2 cards must stay in page-local id order");
+  assert.deepEqual(after.slice(20), expectedPage(fixture.page2, "latest"), "Page 2 cards must stay in page-local latest order");
   assert(scrollAfter.top > 0 && scrollAfter.top >= scrollBefore.top - 1, "Loading page 2 must not reset scrollTop");
   report.passed.push("ChannelPage: page 2 appended after page 1 and scrollTop preserved");
 
-  await page.getByRole("button", { name: "最热", exact: true }).click();
-  await page.waitForTimeout(120);
-  assert.deepEqual(await titles(), [...expectedPage(fixture.page1, "hot"), ...expectedPage(fixture.page2, "hot")], "最热 must sort within each page only");
-  report.passed.push("ChannelPage: 最热 is page-local");
+  const beforeHot = window.channelPaginationFixture.history.length;
+  await page.getByRole("button", { name: "当前热播", exact: true }).click();
+  await page.waitForFunction((n) => window.channelPaginationFixture.history.length === n + 1, beforeHot);
+  await page.evaluate(() => window.channelPaginationFixture.resolveNext());
+  await page.waitForFunction(() => document.querySelectorAll(".grid > div .clamp-2").length === 20);
+  assert.deepEqual(await titles(), expectedPage(fixture.page1, "hot_window"), "当前热播 must follow server hot_window order");
+  report.passed.push("ChannelPage: 当前热播 is server-sorted");
 
-  await page.getByRole("button", { name: "高分", exact: true }).click();
-  await page.waitForTimeout(120);
-  assert.deepEqual(await titles(), [...expectedPage(fixture.page1, "score"), ...expectedPage(fixture.page2, "score")], "高分 must sort within each page only");
-  report.passed.push("ChannelPage: 高分 is page-local");
+  const beforeRandom = window.channelPaginationFixture.history.length;
+  await page.getByRole("button", { name: "精选推荐", exact: true }).click();
+  await page.waitForFunction((n) => window.channelPaginationFixture.history.length === n + 1, beforeRandom);
+  await page.evaluate(() => window.channelPaginationFixture.resolveNext());
+  await page.waitForFunction(() => document.querySelectorAll(".grid > div .clamp-2").length === 20);
+  assert.deepEqual(await titles(), expectedPage(fixture.page1, "random"), "精选推荐 must follow server random order");
+  report.passed.push("ChannelPage: 精选推荐 is server-sorted");
 
   assert.deepEqual(report.pageErrors, [], "No page errors");
   assert.deepEqual(report.external, [], "No upstream traffic");

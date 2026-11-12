@@ -24,6 +24,13 @@ const makeVideo = (ids: number[]) => ids.map((id, index) => ({
 
 const page1 = makeVideo(page1Ids);
 const page2 = makeVideo(page2Ids);
+/* 模拟服务端排序：latest 按 id 降序、hot_window 按 hot 降序、random 固定伪随机。 */
+const sortList = (list: ReturnType<typeof makeVideo>, sort: string | undefined) => {
+  const arr = [...list];
+  if (sort === "hot_window") return arr.sort((a, b) => b.hot - a.hot);
+  if (sort === "random") return arr.sort((a, b) => (a.id % 13) - (b.id % 13));
+  return arr.sort((a, b) => b.id - a.id);
+};
 const pending: { args: Record<string, unknown>; resolve: (value: unknown) => void }[] = [];
 const fixture = {
   history: [] as { cmd: string; args: Record<string, unknown> }[],
@@ -34,8 +41,10 @@ const fixture = {
     const request = pending.shift();
     if (!request) throw new Error("no pending api_category request");
     const page = Number(request.args.page);
+    const sort = request.args.sort as string | undefined;
+    const source = page === 1 ? page1 : page2;
     request.resolve({
-      items: page === 1 ? page1 : page2,
+      items: sortList(source, sort),
       pagination: { page, pages: 2, size: 20, total: 40 },
     });
   },
