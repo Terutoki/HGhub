@@ -225,7 +225,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
   const requestSeq = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
 
-  const loadMore = async (reset = false, sortOverride = serverSort, originalCateOverride = originalCate) => {
+  const loadMore = async (reset = false, sortOverride: string = serverSort, originalCateOverride = originalCate) => {
     const seq = reset ? ++requestSeq.current : requestSeq.current;
     if (!reset && (busy.current || page >= pages)) return;
     busy.current = true;
