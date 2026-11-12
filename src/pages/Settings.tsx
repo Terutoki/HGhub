@@ -281,7 +281,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           </div>
 
           <p className="text-[12px] text-on/70 leading-relaxed mt-4">
-            基于 Rust + Tauri 2 构建的跨平台客户端，支持 Windows、macOS 与 Android。
+            基于 Rust + Tauri 2 构建的跨平台客户端，支持 Windows、macOS、Linux、Android 与 iOS。
             界面遵循 Fluent 设计语言，播放器采用沉浸式竖屏信息流。
           </p>
 

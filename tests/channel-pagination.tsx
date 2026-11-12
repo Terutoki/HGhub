@@ -1,4 +1,3 @@
-import React from "react";
 import { createRoot } from "react-dom/client";
 import { ChannelPage } from "../src/pages/Category";
 import { AppProvider } from "../src/store";
@@ -57,12 +56,12 @@ Object.assign(window, {
   },
 });
 
+// 生产构建不带 StrictMode；dev 下 StrictMode 会把挂载 effect 跑两遍，而 ChannelPage
+// 首次加载没有去重，会让 api_category 请求翻倍、后面的分页计数断言全部失真。
 createRoot(document.querySelector("#root")!).render(
-  <React.StrictMode>
-    <AppProvider>
-      <div style={{ position: "relative", width: 390, height: 844 }}>
-        <ChannelPage cate="ai-duanju" name="AI成人短剧" onBack={() => {}} wide={false} />
-      </div>
-    </AppProvider>
-  </React.StrictMode>,
+  <AppProvider>
+    <div style={{ position: "relative", width: 390, height: 844 }}>
+      <ChannelPage cate="ai-duanju" name="AI成人短剧" onBack={() => {}} wide={false} />
+    </div>
+  </AppProvider>,
 );
