@@ -73,70 +73,13 @@ pub fn fixed() -> Value {
         .collect::<Vec<_>>())
 }
 
-/// 拉地址发布页 → 解析 publish.js → 拼出镜像地址。只在用户点开「线路」时调用。
+/// 镜像列表：唯一播放源已固定为 huangguoai.com，不再抓发布页、不探镜像。
+/// 保留命令签名与返回结构，前端看到的始终是空列表。
 pub async fn mirrors() -> Result<Value, String> {
-    let html = get_text_within(PUBLISH_PAGE, PAGE_TIMEOUT).await?;
-    let js_rel = script_src(&html).unwrap_or_else(|| "publish.js".to_string());
-    let js_url = absolute(PUBLISH_PAGE, &js_rel);
-    let js = get_text_within(&js_url, PAGE_TIMEOUT).await?;
-
-    let domains = js_array(&js, "var urls");
-    let subs = js_array(&js, "var subdomains");
-    if domains.is_empty() {
-        return Err("地址发布页格式有变化：没找到镜像域名".to_string());
-    }
-
-    let mut items: Vec<Value> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    'outer: for domain in domains {
-        let domain = domain.trim_end_matches('/').to_string();
-        if domain.is_empty() {
-            continue;
-        }
-        let hosts: Vec<String> = if subs.is_empty() {
-            vec![domain.clone()]
-        } else {
-            subs.iter().map(|s| format!("{s}.{domain}")).collect()
-        };
-        for host in hosts {
-            if !seen.insert(host.clone()) {
-                continue;
-            }
-            items.push(json!({ "url": format!("https://{host}"), "host": host }));
-            remember_mirror(&host);
-            if items.len() >= MIRROR_MAX {
-                break 'outer;
-            }
-        }
-    }
-    if items.is_empty() {
-        return Err("地址发布页里没有可用的镜像地址".to_string());
-    }
-
-    let mut recommended = match tokio::time::timeout(RECOMMEND_TIMEOUT, recommend()).await {
-        Ok(list) => list,
-        Err(_) => Vec::new(),
-    };
-    // 发布页每次给的子域都不一样（服务端随机拼），自动选线选中的那条
-    // 往往不在这一批里。把当前线路补到最前面，用户一眼能看到「我正走这条」。
-    let current = crate::net::base();
-    if let Some(host) = url::Url::parse(&current)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
-    {
-        if !recommended
-            .iter()
-            .any(|v| v.get("url").and_then(Value::as_str) == Some(current.as_str()))
-        {
-            recommended.insert(0, json!({ "url": current, "host": host }));
-        }
-    }
     Ok(json!({
-        "source": PUBLISH_PAGE,
-        "script": js_url,
-        "items": items,
-        "recommended_source": RECOMMEND_PAGE,
-        "recommended": recommended,
+        "source": "",
+        "items": [],
+        "recommended": [],
     }))
 }
 
@@ -297,84 +240,35 @@ async fn probe_hit(tier: &'static str, url: &str) -> Hit {
     }
 }
 
-/// 自动选线：ping 一次主站，不通就用推荐页上挂的镜像。
+/// 自动选线：唯一播放源固定为 huangguoai.com，不再探测、不再切镜像。
 ///
-/// ping = 一次 `GET /api/videos?page=1&size=1`，成本跟 ICMP 差不多。
-/// 只看首页不够：`.ai` 首页 200，但它只是落地页，`/api` 全 404。
-///
-/// 主站和镜像全都不通时返回 `reason = "all-down"` 且 `base` 为空 —— **不切线路**。
-/// 以前这里会盲切到 `.ai`（`ms = 0`），用户看到的是「首页能开、内容全空」，
-/// 比直接提示「线路全部不可用」更难排查。
+/// 保留返回结构与 `reason` 字段；`base` 恒为主站，前端据此只会停在 main。
 pub async fn auto_pick() -> Value {
     let (main_tier, main_url) = AUTO_LINES[0];
-
-    let main_hit = probe_hit(main_tier, main_url).await;
-    if main_hit.ok {
-        return json!({
-            "base": main_url,
-            "tier": main_tier,
-            "ms": main_hit.ms,
-            "reason": "main-ok",
-            "candidates": [main_hit.json()],
-        });
-    }
-
-    // 主站不通（国内）：用它推荐页上挂的镜像。推荐页自己也可能是超时的，
-    // 给个上限，别让一次选线拖十几秒还没结论。
-    let mirrors = match tokio::time::timeout(RECOMMEND_TIMEOUT, recommend()).await {
-        Ok(list) => list,
-        Err(_) => Vec::new(),
-    };
-    let mut urls: Vec<String> = mirrors
-        .iter()
-        .filter_map(|v| v.get("url").and_then(Value::as_str).map(str::to_string))
-        .take(AUTO_MIRROR_MAX)
-        .collect();
-    urls.dedup();
-    let mut handles = Vec::new();
-    for u in urls {
-        handles.push(tokio::spawn(async move { probe_hit("mirror", &u).await }));
-    }
-    let mut hits = vec![main_hit.clone()];
-    for h in handles {
-        if let Ok(hit) = h.await {
-            hits.push(hit);
-        }
-    }
-    hits.sort_by_key(|h| (!h.ok, h.ms));
-    let candidates: Vec<Value> = hits.iter().map(Hit::json).collect();
-    if let Some(h) = hits.first().filter(|h| h.ok) {
-        return json!({
-            "base": h.url,
-            "tier": h.tier,
-            "ms": h.ms,
-            "reason": "mirror-fallback",
-            "candidates": candidates,
-        });
-    }
-    // 全都不通：保持当前线路不动，把「全都不可用」这个结论交给前端提示。
     json!({
-        "base": "",
-        "tier": "",
+        "base": main_url,
+        "tier": main_tier,
         "ms": 0,
-        "reason": "all-down",
-        "candidates": candidates,
+        "reason": "main-fixed",
+        "candidates": [{
+            "tier": main_tier,
+            "url": main_url,
+            "ok": true,
+            "reachable": true,
+            "ms": 0,
+            "status": null,
+        }],
     })
 }
-/// 只在「当前走的不是主站」时用：探一次主站，通了就切回，不通保持原状。
-///
-/// 比 [`auto_pick`] 便宜得多——不抓发布页、不并发探镜像，就一个请求。
-/// 解决的是「挂着代理却一直待在镜像上」：镜像自己也是通的，体检看不出任何问题，
-/// 只有主动敲一下主站，才知道现在能不能回去。
+/// 回切主站：主站就是唯一线路，恒返回主站可用，不发请求。
 pub async fn try_main() -> Value {
     let (tier, url) = AUTO_LINES[0];
-    let hit = probe_hit(tier, url).await;
     json!({
-        "ok": hit.ok,
-        "base": hit.url,
+        "ok": true,
+        "base": url,
         "tier": tier,
-        "ms": hit.ms,
-        "status": hit.status,
+        "ms": 0,
+        "status": null,
     })
 }
 /// 判活「当前线路」：和 [`auto_pick`] 用同一个请求（`/api/videos?page=1&size=1`）。

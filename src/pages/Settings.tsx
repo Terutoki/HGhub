@@ -2,8 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, APP_VERSION, hostOf, logLine, platform, type UpdateInfo } from "../api";
 import { useStore } from "../store";
 import { Modal, Toggle } from "../components/ui";
-import LinePicker from "../components/LinePicker";
-import { autoLineEnabled, pickLine, setAutoLine } from "../autoLine";
 import { copyPlaybackLog, initPlaybackLog, setPlaybackLog, tracePlayback, usePlaybackLog } from "../playbackDiagnostics";
 import { formatNetDiag, shortVerdict } from "../netDiagReport";
 import { copyText } from "../clipboard";
@@ -16,9 +14,6 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
   const [about, setAbout] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [lineOpen, setLineOpen] = useState(false);
-  const [lineBase, setLineBase] = useState("");
-  const [autoLineOn, setAutoLineOn] = useState(autoLineEnabled());
   const [checking, setChecking] = useState(false);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   /** 应用内更新进行到哪一步（空串=没在更新） */
@@ -29,10 +24,6 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
   const [diagReport, setDiagReport] = useState<string | null>(null);
   const [copyingReport, setCopyingReport] = useState(false);
 
-  const readLine = () => {
-    api.lineState().then((s) => setLineBase(s.base)).catch(() => {});
-  };
-  useEffect(readLine, []);
   useEffect(() => { void initPlaybackLog(); }, []);
 
   const checkUpdate = async () => {
@@ -150,28 +141,13 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           </Section>
 
           <Section title="网络">
-            <button onClick={() => setLineOpen(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
+            <div className="flex items-center gap-3 px-3.5 py-3">
               <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IBoltF size={16} /></span>
               <div className="flex-1 min-w-0">
-                <div className="text-[12.5px] text-on">线路</div>
-                <div className="text-[10.5px] text-mut truncate">{lineBase ? hostOf(lineBase) : "固定线路 1（默认）"}</div>
+                <div className="text-[12.5px] text-on">播放源</div>
+                <div className="text-[10.5px] text-mut truncate">固定 huangguoai.com</div>
               </div>
-              <IChevR size={15} className="text-mut" />
-            </button>
-            <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IRefresh size={15} /></span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12.5px] text-on">自动选择线路</div>
-              </div>
-              <Toggle
-                on={autoLineOn}
-                onChange={(on) => {
-                  setAutoLine(on);
-                  setAutoLineOn(on);
-                  toast(on ? "已开启：线路跟着网络自动选" : "已关闭：改用手动选线");
-                  if (on) void pickLine("manual", true).then(readLine);
-                }}
-              />
+              <span className="text-[10.5px] text-mint">已固定</span>
             </div>
             <div className="flex items-center gap-3 px-3.5 py-3">
               <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ILockF size={15} /></span>
@@ -282,8 +258,6 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           <div className="text-center text-[10px] text-dim mt-5">HGhub {APP_VERSION} · {platform === "android" ? "Android" : platform === "ios" ? "iOS" : platform === "macos" ? "macOS" : platform === "linux" ? "Linux" : "Windows"} 客户端</div>
         </div>
       </div>
-
-      <LinePicker open={lineOpen} onClose={() => { setLineOpen(false); readLine(); }} />
 
       <Modal open={diagReport !== null} onClose={() => setDiagReport(null)} width={520}>
         <div className="p-5">

@@ -66,15 +66,20 @@ pub async fn line_state() -> Result<Value, String> {
     }))
 }
 
-/// 手动切换线路：立即生效并落盘（下次启动沿用）。
+/// 手动切换线路：唯一播放源固定为 huangguoai.com，只放行默认主站，其余拒绝。
 #[tauri::command]
 pub async fn line_set(state: State<'_, Api>, url: String) -> Result<String, String> {
+    let next = crate::net::normalize_base(&url)
+        .ok_or_else(|| "线路地址无效（需要纯 HTTPS 站点地址，禁止内网）".to_string())?;
+    if next != crate::net::DEFAULT_BASE {
+        return Err("唯一播放源已固定，不再支持切换线路".into());
+    }
     let previous = base();
-    let next = crate::net::set_base(&url)?;
-    if previous != next {
+    let applied = crate::net::set_base(&next)?;
+    if previous != applied {
         state.session.clear();
     }
-    Ok(next)
+    Ok(applied)
 }
 
 /// 从地址发布页抓镜像线路（只在用户点开「线路」时调用）。

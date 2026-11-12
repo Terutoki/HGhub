@@ -69,23 +69,15 @@ pub fn trusted_auth_origin(origin: &str) -> bool {
         || crate::lines::is_trusted_mirror(origin)
 }
 
-/// 启动时读回上次选择的线路（文件不存在 / 内容坏了就保持默认）。
+/// 启动时绑定线路：唯一播放源固定为 huangguoai.com，不再恢复旧 line.json
+/// （升级前用户可能停在镜像），直接清掉旧配置，base 恒为 DEFAULT_BASE。
 pub fn bind_base(dir: &std::path::Path) {
     network_policy::bind_security(dir);
     let path = dir.join("line.json");
-    if let Ok(text) = std::fs::read_to_string(&path) {
-        if let Ok(v) = serde_json::from_str::<Value>(&text) {
-            if let Some(next) = v
-                .get("base")
-                .and_then(|x| x.as_str())
-                .and_then(normalize_base)
-            {
-                crate::lines::remember_line(&next);
-                if let Ok(mut cur) = BASE.write() {
-                    *cur = next;
-                }
-            }
-        }
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => {}
     }
     if let Ok(mut f) = BASE_FILE.write() {
         *f = Some(path);
