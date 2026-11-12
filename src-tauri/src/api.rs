@@ -928,6 +928,20 @@ pub async fn api_post_category(
         .await
 }
 
+/// 按标签取帖子（短剧剧评 = tag「黄果原创」）：`/api/posts/tag/{tag}`，返回与帖子列表同构。
+#[tauri::command]
+pub async fn api_posts_tag(
+    state: State<'_, Api>,
+    tag: String,
+    page: u32,
+    size: u32,
+) -> Result<Value, String> {
+    let encoded: String = url::form_urlencoded::byte_serialize(tag.as_bytes()).collect();
+    state
+        .get(&format!("/api/posts/tag/{encoded}?page={page}&size={size}"))
+        .await
+}
+
 /// 相关推荐：`/api/videos/{id}/related` 返回 data.items。
 #[tauri::command]
 pub async fn api_related(state: State<'_, Api>, id: i64) -> Result<Value, String> {

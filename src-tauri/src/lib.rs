@@ -212,6 +212,7 @@ pub fn run() {
             api::api_post_comments,
             api::api_post_categories,
             api::api_post_category,
+            api::api_posts_tag,
             api::api_related,
             api::api_following,
             api::api_user,

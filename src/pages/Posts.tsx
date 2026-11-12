@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, cover, fmt, isMobile } from "../api";
-import type { Post, PostCategory } from "../types";
+import type { Post } from "../types";
 import { useStore } from "../store";
 import { copyText } from "../clipboard";
 import { Empty, Img } from "../components/ui";
@@ -9,30 +9,25 @@ import { IBack, IFireF, IPlayF, ISearch } from "../icons";
 import { handleArticleClick, sanitizeHtml } from "../html";
 import { InplaceSearch } from "../components/InplaceSearch";
 
-/* 博客栏目：最新（全部帖子）+ 热门吃瓜 / AI原创。名称优先用站点下发的 PostCategory。 */
+/* 博客频道：默认最新列表；顶部两个子频道按官网结构。 */
 const BLOG_TABS = [
-  { route: "latest", name: "最新" },
-  { route: "remen-chigua", name: "热门吃瓜" },
-  { route: "ai-yuanchuang", name: "AI原创" },
+  { key: "gossip", name: "黑料吃瓜" },
+  { key: "reviews", name: "短剧剧评" },
 ] as const;
+const BLOG_LATEST = "latest";
 
 /* ================= 博客列表 ================= */
 export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean }) {
   const { push } = useStore();
   const [searching, setSearching] = useState(false);
-  const [cats, setCats] = useState<PostCategory[]>([]);
-  const [cat, setCat] = useState<string>(BLOG_TABS[0].route);
-  const latest = cat === "latest";
+  const [cat, setCat] = useState<string>(BLOG_LATEST);
+  const latest = cat === BLOG_LATEST;
   const [items, setItems] = useState<Post[]>([]);
   const [page, setPage] = useState(0);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const busy = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    api.postCategories().then((r) => setCats(r?.items || [])).catch(() => {});
-  }, []);
 
   const loadMore = async (reset = false) => {
     if (busy.current) return;
@@ -41,7 +36,11 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
     busy.current = true;
     setLoading(true);
     try {
-      const res = latest ? await api.posts(next, 20, "latest") : await api.postCategory(cat, next, 20);
+      const res = latest
+        ? await api.posts(next, 20, "latest")
+        : cat === "reviews"
+          ? await api.postsTag("黄果原创", next, 20)
+          : await api.postCategory("remen-chigua", next, 20);
       setItems((prev) => {
         const base = reset ? [] : prev;
         const seen = new Set(base.map((x) => x.id));
@@ -73,24 +72,23 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pages, cat]);
 
-  const tabs = BLOG_TABS.map((tab) => {
-    const live = tab.route === "latest" ? undefined : cats.find((c) => c.route === tab.route);
-    return { route: tab.route, name: live?.name || tab.name };
-  });
-
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-2 bg-s1" style={{ paddingTop: "var(--sat, 0px)" }}>
         <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={19} /></button>
         <span className="text-[14px] font-bold text-on">博客</span>
-        <span className="text-[10.5px] text-mut ml-1">最新 · 热门吃瓜 · AI原创</span>
+        {latest ? (
+          <span className="text-[10.5px] text-mut ml-1">黑料吃瓜 · 短剧剧评</span>
+        ) : (
+          <button onClick={() => pickCat(BLOG_LATEST)} className="text-[10.5px] text-primary ml-1 pressable">返回最新</button>
+        )}
         <button onClick={() => setSearching(true)} aria-label="搜索博客" className="ml-auto w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
       </div>
       <div className="shrink-0 flex gap-1 mx-4 my-2.5 p-1 rounded-(--r-ctl) bg-s3">
-        {tabs.map((tab) => {
-          const active = cat === tab.route;
+        {BLOG_TABS.map((tab) => {
+          const active = cat === tab.key;
           return (
-            <button key={tab.route} onClick={() => pickCat(tab.route)}
+            <button key={tab.key} onClick={() => pickCat(tab.key)}
               className={`flex-1 h-8 rounded-(--r-sm) text-[12px] font-semibold pressable ${active ? "tonal text-on-sec" : "text-mut"}`}
               style={active ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{tab.name}</button>
           );
@@ -117,7 +115,7 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
         ) : loading ? (
           <div className="flex justify-center py-12"><div className="w-8 h-8 spinner" /></div>
         ) : (
-          <Empty icon={<IFireF size={26} />} title={latest ? "暂无博客内容" : cat === "ai-yuanchuang" ? "暂无 AI 原创内容" : "暂无吃瓜内容"} sub="稍后再来看看" />
+          <Empty icon={<IFireF size={26} />} title={latest ? "暂无博客内容" : cat === "reviews" ? "暂无短剧剧评" : "暂无黑料吃瓜内容"} sub="稍后再来看看" />
         )}
         <div ref={sentinel} className="h-10" />
         {loading && <div className="flex justify-center py-2"><div className="w-6 h-6 spinner" /></div>}
