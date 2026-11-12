@@ -1,8 +1,4 @@
-//! 线路（数据源）：固定线路 + 地址发布页上的镜像线路。
-//!
-//! 上游只是域名在变，请求链路与数据模型完全一致，所以「切线路」等价于换 `net::base()`。
-//! 镜像地址来自 <https://huangguoai.pages.dev/>：那个页面本身是空壳，真正的清单在
-//! `publish.js` 里（`var urls` 域名数组 + `var subdomains` 子域数组，页面自己随机拼）。
+//! 线路（数据源）：固定线路。唯一播放源固定为 huangguoai.com，不再解析镜像。
 
 use serde_json::{json, Value};
 use std::sync::RwLock;
@@ -13,43 +9,16 @@ pub const FIXED: [(&str, &str); 1] = [
     ("固定线路 1", "https://huangguoai.com"),
 ];
 
-const PUBLISH_PAGE: &str = "https://huangguoai.pages.dev/";
-/// 推荐镜像源：这个页面每次打开都会重挑线路，正好当「推荐镜像组」的来源。
-const RECOMMEND_PAGE: &str = "https://huangguoai.ai/";
-/// 推荐页里会出现、但不是站点本体的域名（地址发布页 / 下载站 / 图床 / 统计 / 跳转）。
-const NOT_SITE: [&str; 11] = [
-    "pages.dev",
-    "huangguoai.ai",
-    "huangguoai.com",
-    "huangguoju.com",
-    "gvsnzgbim.cc",
-    "hgai12.com",
-    "drleao.cn",
-    "googletagmanager.com",
-    "cloudfront.net",
-    "t.me",
-    "x.com",
-];
-/// 镜像列表上限（子域 × 域名是笛卡尔积，界面只展示这么多）
-const MIRROR_MAX: usize = 60;
 /// 单条线路探测超时
 const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// 发布页推荐过的镜像 origin。严格模式下只有这些镜像允许携带凭据。
-///
-/// 国内只能走镜像，而镜像与主站同一后端；不认它们的话，切过去之后
-/// 已登录用户的每个带 token 请求都会被挡成「镜像线路仅供游客浏览」。
-/// 只记录**发布页真的给过的**地址，用户手填的域名不会进这张表。
+/// 发布页推荐过的镜像 origin。固定唯一源后不再解析镜像，
+/// 表保持为空；结构保留，未来恢复线路能力时可直接复用。
 static TRUSTED_MIRRORS: RwLock<Vec<String>> = RwLock::new(Vec::new());
 fn remember_origin(origin: String) {
     let mut list = TRUSTED_MIRRORS.write().unwrap_or_else(|e| e.into_inner());
     if list.len() < 64 && !list.iter().any(|x| x == &origin) {
         list.push(origin);
-    }
-}
-fn remember_mirror(host: &str) {
-    if let Some(origin) = crate::net::normalize_base(&format!("https://{host}")) {
-        remember_origin(origin);
     }
 }
 /// 记下「选定的线路」本身。上次选过的线路要落盘、重启后还要能带 token，
@@ -81,53 +50,6 @@ pub async fn mirrors() -> Result<Value, String> {
         "items": [],
         "recommended": [],
     }))
-}
-
-/// 推荐镜像组：抓推荐源页面，取页面上挂出的站点域名。
-/// 只由 `mirrors()` 调用；条目结构与 `items` 完全一致，顺序保持页面自己的排列。
-async fn recommend() -> Vec<Value> {
-    let Ok(html) = get_text(RECOMMEND_PAGE).await else {
-        return Vec::new();
-    };
-
-    let mut items: Vec<Value> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for host in href_hosts(&html) {
-        if NOT_SITE.iter().any(|bad| host.ends_with(*bad)) {
-            continue;
-        }
-        if !seen.insert(host.clone()) {
-            continue;
-        }
-        items.push(json!({ "url": format!("https://{host}"), "host": host }));
-        remember_mirror(&host);
-        if items.len() >= MIRROR_MAX {
-            break;
-        }
-    }
-    items
-}
-
-/// 从 HTML 里取出 `href="https://<host>/…"` 的 host（去重交给调用方）。
-fn href_hosts(html: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = html;
-    while let Some(i) = rest.find("href=\"https://") {
-        let after = &rest[i + 14..];
-        let end = after.find('"').unwrap_or(after.len());
-        let host = after[..end]
-            .split('/')
-            .next()
-            .unwrap_or_default()
-            .split('?')
-            .next()
-            .unwrap_or_default();
-        if !host.is_empty() {
-            out.push(host.to_string());
-        }
-        rest = &after[end..];
-    }
-    out
 }
 
 /// 可达性探测（并发 6 条一组）。只报结果，不做自动切换。
@@ -170,22 +92,12 @@ async fn probe_one(url: String) -> Value {
 
 /* ───────────────────────── 自动选线 ───────────────────────── */
 
-/// 自动选线的主站候选。
-///
-/// 国内基本连不上 `.com`，不通时用推荐页上挂的镜像（见 [`auto_pick`]）。
-/// `.ai` 不再是候选：它只是落地页，`/api` 全 404，切过去用户看到的是
-/// 「首页能开、内容全空」，比明确报错更难排查。
+/// 自动选线的主站候选（唯一线路）。
 pub const AUTO_LINES: [(&str, &str); 1] = [("main", crate::net::DEFAULT_BASE)];
 /// 判活就打这一个请求，成本等于 ping：能返回 200 就是这条线路能用。
 const AUTO_PROBE_PATH: &str = "/api/videos?page=1&size=1";
 /// 探测超时：只在启动/换网时用，等太久不如直接用另一条。
 const AUTO_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-/// 抓「推荐页」的上限：连推荐页都打不开时，选线要能快速给结论，不能拖十几秒。
-const RECOMMEND_TIMEOUT: Duration = Duration::from_secs(6);
-/// 抓地址发布页 / publish.js 的上限：用户点开「线路」面板时就在这等。
-const PAGE_TIMEOUT: Duration = Duration::from_secs(8);
-/// 镜像最多探这么多条，够挑出快的了
-const AUTO_MIRROR_MAX: usize = 10;
 
 /// 一条候选线路的探测结果。
 #[derive(Clone)]
@@ -285,171 +197,10 @@ pub async fn health() -> Value {
         "status": hit.status,
     })
 }
-async fn get_text(url: &str) -> Result<String, String> {
-    let resp = crate::net::get(url, Duration::from_secs(12), None, None).await?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    resp.text().await.map_err(|e| crate::net::err_text(&e))
-}
-
-/// 带超时的 [`get_text`]：12 秒对外面页面太宽容了——用户点开「线路」面板时
-/// 就在这一步等着，页面挂掉会让人以为整个应用卡死。
-async fn get_text_within(url: &str, limit: Duration) -> Result<String, String> {
-    match tokio::time::timeout(limit, get_text(url)).await {
-        Ok(r) => r,
-        Err(_) => Err("请求超时".to_string()),
-    }
-}
-
-/// 从 HTML 里挑出脚本地址（发布页只有一个 `publish.js?<版本>`）。
-fn script_src(html: &str) -> Option<String> {
-    let mut rest = html;
-    while let Some(i) = rest.find("src=\"") {
-        let after = &rest[i + 5..];
-        let end = after.find('"')?;
-        let candidate = &after[..end];
-        if candidate.contains(".js") {
-            return Some(candidate.to_string());
-        }
-        rest = &after[end..];
-    }
-    None
-}
-
-fn absolute(base: &str, rel: &str) -> String {
-    if rel.starts_with("http://") || rel.starts_with("https://") {
-        return rel.to_string();
-    }
-    let origin = url::Url::parse(base)
-        .ok()
-        .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or_default()));
-    match origin {
-        Some(o) if rel.starts_with('/') => format!("{o}{rel}"),
-        Some(o) => format!("{o}/{rel}"),
-        None => rel.to_string(),
-    }
-}
-
-/// 取 JS 里 `var <name> = [ ... ]` 的字符串数组（去掉行尾 `//` 注释，但保留字符串里的 `//`）。
-fn js_array(src: &str, decl: &str) -> Vec<String> {
-    let Some(at) = src.find(decl) else {
-        return Vec::new();
-    };
-    let rest = &src[at..];
-    let Some(open) = rest.find('[') else {
-        return Vec::new();
-    };
-    let Some(close) = rest[open..].find(']') else {
-        return Vec::new();
-    };
-    strip_line_comments(&rest[open + 1..open + close])
-        .split(',')
-        .map(|raw| {
-            raw.trim()
-                .trim_matches(|c: char| c == '\'' || c == '"')
-                .trim()
-                .to_string()
-        })
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// 去掉 `//` 行尾注释（引号内的 `//` 是 URL，不能动）。
-fn strip_line_comments(body: &str) -> String {
-    let mut out = String::with_capacity(body.len());
-    let mut quote: Option<char> = None;
-    let mut chars = body.chars().peekable();
-    while let Some(c) = chars.next() {
-        match quote {
-            Some(q) => {
-                out.push(c);
-                if c == q {
-                    quote = None;
-                }
-            }
-            None => {
-                if c == '\'' || c == '"' {
-                    quote = Some(c);
-                    out.push(c);
-                } else if c == '/' && chars.peek() == Some(&'/') {
-                    for n in chars.by_ref() {
-                        if n == '\n' {
-                            out.push('\n');
-                            break;
-                        }
-                    }
-                } else {
-                    out.push(c);
-                }
-            }
-        }
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const SAMPLE: &str = r#"
-var subdomains = [
-    'thu',  // 清华
-    'pku',  // 北大
-];
-var urls=[
-	'xxbgwypx.cc/',
-];
-var otherUrls = [
-	'https://huangguoai.pages.dev',
-];
-var foreverUrls = [
-	  'https://huangguoai.com',
-	JumpPage,
-	'https://huangguoai.ai',
-];
-"#;
-
-    #[test]
-    fn parses_publish_js_arrays() {
-        assert_eq!(js_array(SAMPLE, "var urls"), vec!["xxbgwypx.cc/"]);
-        assert_eq!(js_array(SAMPLE, "var subdomains"), vec!["thu", "pku"]);
-        assert_eq!(
-            js_array(SAMPLE, "var foreverUrls"),
-            vec![
-                "https://huangguoai.com",
-                "JumpPage",
-                "https://huangguoai.ai"
-            ]
-        );
-    }
-
-    #[test]
-    fn resolves_relative_script() {
-        assert_eq!(
-            absolute("https://huangguoai.pages.dev/", "publish.js?20261103-2"),
-            "https://huangguoai.pages.dev/publish.js?20261103-2"
-        );
-        assert_eq!(
-            absolute("https://huangguoai.pages.dev/", "/a/b.js"),
-            "https://huangguoai.pages.dev/a/b.js"
-        );
-    }
-
-    #[test]
-    fn picks_script_src() {
-        let html = r#"<link rel="stylesheet" href="publish.css?1" /><script type="text/javascript" src="publish.js?20261103-2"></script>"#;
-        assert_eq!(script_src(html).as_deref(), Some("publish.js?20261103-2"));
-    }
-
-    #[test]
-    fn extracts_href_hosts() {
-        let html = r#"<a href="https://gnpra.adihsppe.cc/ai-huanlian/">a</a><a href="https://huangguoai.com/terms/?x=1">b</a><a href="https://t.me/huangguofans">c</a>"#;
-        assert_eq!(
-            href_hosts(html),
-            vec!["gnpra.adihsppe.cc", "huangguoai.com", "t.me"]
-        );
-    }
 
     /// 手动跑：`cargo test --lib -- --ignored lines::tests::mirrors_live -- --nocapture`
     #[tokio::test]
