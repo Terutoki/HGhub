@@ -85,16 +85,18 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
       </div>
 
       <div className="flex-1 scroll-y pb-24 pt-2">
-        {/* 排行榜入口 */}
-        <button onClick={() => push({ kind: "ranks" })}
-          className="mx-4 mb-2.5 w-[calc(100%-2rem)] flex items-center gap-3 rounded-(--r-md) bg-s2 p-3.5 text-left pressable elev-1">
-          <span className="w-10 h-10 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><ITrophy size={20} /></span>
-          <span className="flex-1">
-            <span className="block text-[14.5px] font-semibold text-on">排行榜</span>
-            <span className="block text-[10.5px] text-mut mt-0.5">热播榜 · 推荐榜 · 潜力榜</span>
-          </span>
-          <IChevR size={16} className="text-mut" />
-        </button>
+        {/* 排行榜入口：只在移动端显示（底部导航没有排行榜，桌面侧栏已有） */}
+        {!wide && (
+          <button onClick={() => push({ kind: "ranks" })}
+            className="mx-4 mb-2.5 w-[calc(100%-2rem)] flex items-center gap-3 rounded-(--r-md) bg-s2 p-3.5 text-left pressable elev-1">
+            <span className="w-10 h-10 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><ITrophy size={20} /></span>
+            <span className="flex-1">
+              <span className="block text-[14.5px] font-semibold text-on">排行榜</span>
+              <span className="block text-[10.5px] text-mut mt-0.5">热播榜 · 推荐榜 · 潜力榜</span>
+            </span>
+            <IChevR size={16} className="text-mut" />
+          </button>
+        )}
 
         {/* 专题 + 标签入口 */}
         <div className="mx-4 mb-5 grid grid-cols-2 gap-2.5">
