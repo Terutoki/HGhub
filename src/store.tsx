@@ -274,7 +274,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("hg:line-changed", bump);
   }, []);
 
-  const setTab = useCallback((t: Tab) => { setTabRaw(t); setStack([]); }, []);
+  const setTab = useCallback((t: Tab) => { setTabRaw(t); setStack(s => s.length ? [] : s); }, []);
   const push = useCallback((pg: PageInput) => {
     setStack((s) => [...s, { ...pg, key: `p${++seq}` } as Page]);
   }, []);

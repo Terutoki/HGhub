@@ -114,7 +114,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     mode: "idle" | "hold" | "scrub" | "pan"; base: number; width: number; playing: boolean;
   } | null>(null);
   /* 单击 / 双击判定：单击净屏，双击暂停 */
-  const lastTapRef = useRef<{ timer: number | null }>({ timer: null });
+  const lastTapRef = useRef<{ timer: number | null; clean?: boolean; idle?: boolean }>({ timer: null });
   /* 系统是否真的转成了横屏（iOS 原生旋转后为 true） */
   const [vpLandscape, setVpLandscape] = useState(
     () => typeof window !== "undefined" && window.innerWidth > window.innerHeight,
@@ -606,29 +606,39 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
       }
     }
     if (!cancelled && g.mode === "idle" && Date.now() - g.t < 260) {
-      // 双击 = 暂停/播放；单击 = 净屏/还原（延迟 230ms 等第二击）
+      // 首击立即反馈；第二击恢复首击前的界面，再切换播放。
       if (lastTapRef.current.timer) {
         window.clearTimeout(lastTapRef.current.timer);
         lastTapRef.current.timer = null;
+        setClean(lastTapRef.current.clean ?? false);
+        if (!isDesktop && fs) setIdle(lastTapRef.current.idle ?? false);
         videoRef.current?.toggle();
       } else {
+        lastTapRef.current.clean = clean;
+        lastTapRef.current.idle = idle;
+        setClean(!clean);
+        if (!isDesktop && fs) setIdle(!idle);
         lastTapRef.current.timer = window.setTimeout(() => {
           lastTapRef.current.timer = null;
-          setClean((v) => !v);
-          if (!isDesktop && fs) setIdle((v) => !v);
         }, 230) as unknown as number;
       }
     }
   };
 
   useEffect(() => {
-    if (!active || controlsLocked) onUp(true);
+    if (!active || controlsLocked) {
+      onUp(true);
+      if (lastTapRef.current.timer) window.clearTimeout(lastTapRef.current.timer);
+      lastTapRef.current.timer = null;
+    }
     // Cancel pending gestures when the page is hidden or controls are locked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, controlsLocked]);
 
   useEffect(() => () => {
     if (gesture.current?.timer) window.clearTimeout(gesture.current.timer);
+    if (lastTapRef.current.timer) window.clearTimeout(lastTapRef.current.timer);
+    lastTapRef.current.timer = null;
     gesture.current = null;
     holdRef.current = false;
     lockArmedRef.current = false;
@@ -840,6 +850,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   return (
     <div
       className={`hg-player-ui ${rotated ? "fs-landscape" : (!isDesktop && fs ? "fs-immersive" : "absolute inset-0")} overflow-hidden bg-black player-root ${controlsLocked ? "is-locked" : ""} ${isDesktop ? "player-surface" : ""} ${theater ? "is-theater" : ""} ${isDesktop && idle ? "is-idle" : ""}`}
+      data-clean={clean}
       onPointerMove={() => { if (isDesktop || fs) wake(); }}
       onPointerDown={() => { if (!isDesktop && fs) wake(); }}>
       <div className="absolute inset-0" inert={controlsLocked}>

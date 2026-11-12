@@ -33,7 +33,7 @@ function TabBar() {
   return <nav className="hg-tabbar ios-mobile-nav" aria-label="主导航" data-over-video={tab === "home"}
     style={{ paddingBottom: platform === "android" ? "var(--sab, 16px)" : "calc(var(--sab, 16px) * .55)" }}>
     <div className="hg-glass">
-      <div className="hg-drop" aria-hidden="true" style={{ left: `${12.5 + index * 25}%` }}><LiquidIndicator /></div>
+      <div className="hg-drop" aria-hidden="true" style={{ transform: `translateX(${index * 100}%)` }}><LiquidIndicator /></div>
       <div className="ios-mobile-nav-items">
         {items.map(({ key, label, Icon, Active }) => {
           const Glyph = tab === key ? Active : Icon;
@@ -107,7 +107,7 @@ function AppBody() {
     return () => window.removeEventListener("keydown", fn);
   }, [stack.length, pop, setTab, loginOpen, setLoginOpen]);
 
-  const vis = (k: Tab) => (tab === k ? "absolute inset-0" : "absolute inset-0 invisible pointer-events-none");
+  const vis = (k: Tab) => (tab === k ? `absolute inset-0 ${k === "home" ? "" : "ios-tab-active"}` : "absolute inset-0 hidden pointer-events-none");
   const pageActive = stack.length === 0 && !loginOpen;
   const bottomInset = isMobile ? (fs || clean ? 0 : 74) : 14;
   /* 栈页（从搜索/分类/我的进入的播放页、图文页）没有底栏，
@@ -190,7 +190,7 @@ function ShellInner({ collapsed, theater }: { collapsed: boolean; theater: boole
     return () => window.removeEventListener("keydown", fn);
   }, [stack.length, pop, setTab, loginOpen, setLoginOpen]);
 
-  const vis = (k: Tab) => (tab === k ? "absolute inset-0" : "absolute inset-0 invisible pointer-events-none");
+  const vis = (k: Tab) => (tab === k ? `absolute inset-0 ${k === "home" ? "" : "ios-tab-active"}` : "absolute inset-0 hidden pointer-events-none");
   const pageActive = stack.length === 0 && !loginOpen;
 
   return (

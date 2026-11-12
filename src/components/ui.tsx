@@ -28,7 +28,7 @@ export function Toggle({ on, onChange, label, disabled = false }: { on: boolean;
     <Button disabled={disabled} onClick={() => onChange(!on)} role="switch" aria-checked={on} aria-label={label}
       className="ios-switch" data-state={on ? "on" : "off"}>
       <span className="ios-switch-track" aria-hidden="true">
-        <span className="ios-switch-thumb"></span>
+        <span className="ios-switch-thumb"><span className="ios-switch-mark" /></span>
       </span>
     </Button>
   );

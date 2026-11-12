@@ -14,14 +14,14 @@ import { createServer as createViteServer } from "vite";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: args } = parseArgs({ options: {
   "media-dir": { type: "string" }, output: { type: "string" }, "browser-executable": { type: "string" },
-  scenarios: { type: "string", default: "seek,legacy,stall,lifecycle,mms" }, help: { type: "boolean" },
+  scenarios: { type: "string", default: "seek,legacy,stall,lifecycle,mms,gesture" }, help: { type: "boolean" },
 } });
 if (args.help) {
-  console.log("pnpm test:playback [--media-dir DIR] [--output NEW_DIR] [--browser-executable PATH] [--scenarios seek,legacy,stall,lifecycle,mms]");
+  console.log("pnpm test:playback [--media-dir DIR] [--output NEW_DIR] [--browser-executable PATH] [--scenarios seek,legacy,stall,lifecycle,mms,gesture]");
   process.exit(0);
 }
 const scenarios = args.scenarios.split(",");
-assert(scenarios.length && scenarios.every(s => ["seek", "legacy", "stall", "lifecycle", "mms"].includes(s)), "Unknown scenario");
+assert(scenarios.length && scenarios.every(s => ["seek", "legacy", "stall", "lifecycle", "mms", "gesture"].includes(s)), "Unknown scenario");
 const output = resolve(args.output || join(root, "test-results", "playback", new Date().toISOString().replace(/[:.]/g, "-")));
 await mkdir(dirname(output), { recursive: true });
 await mkdir(output); // Refuse to overwrite artifacts from an earlier run.
@@ -145,6 +145,33 @@ async function speedMenuKeyboardChecks(page, paused) {
   await page.keyboard.press("Enter");
   await assertSelection(1);
 }
+async function gestureChecks(page) {
+  await loadPlayer(page);
+  const video = page.locator('video');
+  const tap = () => page.evaluate(() => {
+    const surface = document.querySelector('video').parentElement.parentElement;
+    const bounds = surface.getBoundingClientRect();
+    for (const type of ['pointerdown','pointerup']) surface.dispatchEvent(new PointerEvent(type, {
+      bubbles:true, pointerId:91, pointerType:'touch', button:0, clientX:bounds.x+100, clientY:bounds.y+100,
+    }));
+  });
+  const clean = () => page.locator('.player-root').getAttribute('data-clean');
+  const start = Date.now();
+  await tap();
+  await page.waitForFunction(() => document.querySelector('.player-root')?.dataset.clean === 'true');
+  const singleTapMs = Date.now()-start;
+  assert(singleTapMs < 230, 'First tap must update before the old double-tap waiting window');
+  await page.waitForTimeout(250);
+  await tap();
+  await page.waitForFunction(() => document.querySelector('.player-root')?.dataset.clean === 'false');
+  await page.waitForTimeout(250);
+  const wasPaused = await video.evaluate(v=>v.paused);
+  await tap(); await tap();
+  await page.waitForFunction(paused => document.querySelector('video').paused !== paused, wasPaused);
+  assert.equal(await clean(), 'false', 'Double tap restores chrome and toggles playback once');
+  return {singleTapMs};
+}
+
 async function seekChecks(page, legacy) {
   await loadPlayer(page, legacy);
   await clickProgress(page, .1);
@@ -362,7 +389,7 @@ try {
   report.browser_version = browser.version();
   for (const name of scenarios) {
     const dir = join(output, name); await mkdir(dir);
-    const context = await browser.newContext({ viewport: { width: 1000, height: 900 } });
+    const context = await browser.newContext({ ...(name === "gesture" ? {userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 Version/17.1 Mobile/15E148 Safari/604.1",hasTouch:true} : {}), viewport: { width: 1000, height: 900 } });
     await context.exposeBinding("collectPlaybackLogs", (_source, entries) => {
       for (const e of entries) jsonl(join(dir, "playback.jsonl"), { ts: e.data.at, event: `web.${e.event}`, data: e.data, transport: "browser-fixture" });
     });
@@ -385,7 +412,7 @@ try {
     const result = { name, status: "running", started: new Date().toISOString() }; report.cases.push(result);
     let deadline;
     try {
-      const action = name === "seek" || name === "legacy" ? seekChecks(page, name === "legacy") : name === "stall" ? stallCheck(page) : name === "mms" ? managedMediaCheck(page) : lifecycleCheck(page);
+      const action = name === "gesture" ? gestureChecks(page) : name === "seek" || name === "legacy" ? seekChecks(page, name === "legacy") : name === "stall" ? stallCheck(page) : name === "mms" ? managedMediaCheck(page) : lifecycleCheck(page);
       result.metrics = await Promise.race([action, new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("Scenario exceeded 45 seconds")), 45000); })]);
       assert.deepEqual(pageErrors, [], "Browser script errors");
       assert.deepEqual(externalRequests, [], "Unexpected external network requests");
