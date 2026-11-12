@@ -163,13 +163,31 @@ try {
       await page.getByRole("button", { name: "设置", exact: true }).click();
       const security = page.getByRole("switch", { name: "严格安全模式", exact: true });
       await security.waitFor();
+      const pageIn = page.locator(".a-page-in");
+      if (await pageIn.count()) {
+        await pageIn.first().evaluate(async el => {
+          await Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+        });
+      }
       const switches = page.getByRole("switch");
       result.switches = [];
       for (const item of await switches.all()) {
         const bounds = await item.boundingBox();
-        result.switches.push({ label: await item.getAttribute("aria-label"), width: bounds.width, height: bounds.height });
-        assert(bounds.width >= 44 && bounds.height >= 44, "Switch touch targets are at least 44×44 CSS pixels");
+        const target = await item.evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight }));
+        const visual = await item.evaluate(el => {
+          const track = getComputedStyle(el.querySelector(".ios-switch-track"));
+          const thumb = getComputedStyle(el.querySelector(".ios-switch-thumb"));
+          return { trackWidth: track.width, trackBorder: track.borderTopWidth, trackBackground: track.backgroundImage,
+            thumbBackground: thumb.backgroundImage };
+        });
+        result.switches.push({ label: await item.getAttribute("aria-label"), width: target.width, height: target.height, visualBounds: bounds, ...visual });
+        assert(target.width >= 44 && target.height >= (test.android ? 48 : 44), "Switch touch target meets the platform minimum");
         assert(["true", "false"].includes(await item.getAttribute("aria-checked")), "Switch exposes its state");
+        if (test.android) {
+          assert.equal(visual.trackWidth, "54px", "Android renders the wider glass switch track");
+          assert.notEqual(visual.trackBorder, "0px", "Android switch track has a visible glass edge");
+          assert.match(visual.thumbBackground, /linear-gradient/, "Android thumb uses the metallic finish");
+        }
       }
       await security.click();
       await page.waitForFunction(() => document.querySelector('[role=switch][aria-label="严格安全模式"]')?.getAttribute("aria-checked") === "false");
