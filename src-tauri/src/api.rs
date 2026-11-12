@@ -585,15 +585,20 @@ pub async fn api_feed(state: State<'_, Api>, page: u32, size: u32) -> Result<Val
         .await
 }
 
-/// 长剧频道：`/api/videos/long`，返回分页视频卡（结构同 api_feed）。
+/// 长剧频道：`/api/videos/long`，返回分页视频卡（结构同 api_feed）；`sort=new` 为最新。
 #[tauri::command]
 pub async fn api_long_videos(
     state: State<'_, Api>,
     page: u32,
     size: u32,
+    sort: Option<String>,
 ) -> Result<Value, String> {
+    let sort = match sort.as_deref() {
+        Some(s) if !s.trim().is_empty() => format!("&sort={s}"),
+        _ => String::new(),
+    };
     state
-        .get(&format!("/api/videos/long?page={page}&size={size}"))
+        .get(&format!("/api/videos/long?page={page}&size={size}{sort}"))
         .await
 }
 
@@ -638,10 +643,15 @@ pub async fn api_category(
     cate: String,
     page: u32,
     size: u32,
+    sort: Option<String>,
 ) -> Result<Value, String> {
+    let sort = match sort.as_deref() {
+        Some(s) if !s.trim().is_empty() => format!("&sort={s}"),
+        _ => String::new(),
+    };
     state
         .get(&format!(
-            "/api/videos/category/{cate}?page={page}&size={size}"
+            "/api/videos/category/{cate}?page={page}&size={size}{sort}"
         ))
         .await
 }
@@ -685,9 +695,18 @@ pub async fn api_search_hot(state: State<'_, Api>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn api_posts(state: State<'_, Api>, page: u32, size: u32) -> Result<Value, String> {
+pub async fn api_posts(
+    state: State<'_, Api>,
+    page: u32,
+    size: u32,
+    sort: Option<String>,
+) -> Result<Value, String> {
+    let sort = match sort.as_deref() {
+        Some(s) if !s.trim().is_empty() => format!("&sort={s}"),
+        _ => String::new(),
+    };
     state
-        .get(&format!("/api/posts?page={page}&size={size}"))
+        .get(&format!("/api/posts?page={page}&size={size}{sort}"))
         .await
 }
 
@@ -882,17 +901,24 @@ pub async fn api_post_categories(state: State<'_, Api>) -> Result<Value, String>
     state.get("/api/site/categories/post").await
 }
 
-/// 按分类取吃瓜帖：`/api/posts/category/{route}`。
+/// 按分类取吃瓜帖：`/api/posts/category/{route}`；`sort=latest` 走最新排序。
 #[tauri::command]
 pub async fn api_post_category(
     state: State<'_, Api>,
     route: String,
     page: u32,
     size: u32,
+    sort: Option<String>,
 ) -> Result<Value, String> {
     let encoded: String = url::form_urlencoded::byte_serialize(route.as_bytes()).collect();
+    let sort = match sort.as_deref() {
+        Some(s) if !s.trim().is_empty() => format!("&sort={s}"),
+        _ => String::new(),
+    };
     state
-        .get(&format!("/api/posts/category/{encoded}?page={page}&size={size}"))
+        .get(&format!(
+            "/api/posts/category/{encoded}?page={page}&size={size}{sort}"
+        ))
         .await
 }
 

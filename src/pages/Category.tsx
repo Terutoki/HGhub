@@ -42,10 +42,12 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
     setErrors(m => ({ ...m, [key]: "" }));
     try {
       if (key === "posts") {
-        const result = await api.posts(1, 8);
+        const result = await api.posts(1, 8, "latest");
         if (mounted.current) setPosts(result?.items || []);
       } else {
-        const result = key === "long" ? await api.longVideos(1, 8) : await api.category(key, 1, 8);
+        const result = key === "long"
+          ? await api.longVideos(1, 8, "new")
+          : await api.category(key, 1, 8, "latest");
         if (mounted.current) setRows(m => ({ ...m, [key]: result?.items || [] }));
       }
     } catch (error) {
@@ -193,10 +195,17 @@ function PreviewStatus({ name, loading, error, onRetry }: { name: string; loadin
 }
 
 /* ================= 频道详情页 ================= */
+const CHANNEL_SORTS = [
+  { value: "latest", label: "最近更新" },
+  { value: "hot_window", label: "当前热播" },
+  { value: "random", label: "精选推荐" },
+] as const;
+
 export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: string; onBack: () => void; wide: boolean }) {
   const { push } = useStore();
   const [searching, setSearching] = useState(false);
-  const [sort, setSort] = useState<"最新" | "最热" | "高分">("最新");
+  const [serverSort, setServerSort] = useState<(typeof CHANNEL_SORTS)[number]["value"]>("latest");
+  const [localSort, setLocalSort] = useState<"最新" | "最热" | "高分">("最新");
   const [pageItems, setPageItems] = useState<VideoCard[][]>([]);
   const items = pageItems.flat();
   const [page, setPage] = useState(0);
@@ -204,47 +213,66 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const busy = useRef(false);
+  const requestSeq = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
 
-  const loadMore = async () => {
-    if (busy.current || page >= pages) return;
+  const loadMore = async (reset = false, sortOverride = serverSort) => {
+    const seq = reset ? ++requestSeq.current : requestSeq.current;
+    if (!reset && (busy.current || page >= pages)) return;
     busy.current = true;
     setLoading(true);
     try {
-      const next = page + 1;
-      const res = cate === "long" ? await api.longVideos(next, 20) : await api.category(cate, next, 20);
+      const next = reset ? 1 : page + 1;
+      const res = cate === "long"
+        ? await api.longVideos(next, 20, "new")
+        : await api.category(cate, next, 20, sortOverride);
+      if (seq !== requestSeq.current) return;
       setPageItems((prev) => {
-        const seen = new Set(prev.flat().map((x) => x.id));
-        return [...prev, (res?.items || []).filter((x) => !seen.has(x.id))];
+        const base = reset ? [] : prev;
+        const seen = new Set(base.flat().map((x) => x.id));
+        return [...base, (res?.items || []).filter((x) => !seen.has(x.id))];
       });
       setPage(next);
       setPages(res?.pagination?.pages || next);
       setErr(null);
     } catch (e) {
-      setErr((e as Error).message || "加载失败");
+      if (seq === requestSeq.current) setErr((e as Error).message || "加载失败");
     } finally {
-      busy.current = false;
-      setLoading(false);
+      if (seq === requestSeq.current) {
+        busy.current = false;
+        setLoading(false);
+      }
     }
   };
 
-  useEffect(() => { loadMore(); /* eslint-disable-next-line */ }, []);
+  const changeServerSort = (value: (typeof CHANNEL_SORTS)[number]["value"]) => {
+    if (value === serverSort) return;
+    setServerSort(value);
+    setPageItems([]);
+    setPage(0);
+    setPages(1);
+    setErr(null);
+    void loadMore(true, value);
+  };
+
+  useEffect(() => { void loadMore(true); /* eslint-disable-next-line */ }, []);
   useEffect(() => {
     const el = sentinel.current;
     if (!el) return;
-    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) loadMore(); }, { rootMargin: "600px" });
+    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) void loadMore(); }, { rootMargin: "600px" });
     io.observe(el);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pages]);
 
-  // 每个服务端分页内部排序，分页之间保持追加顺序：
-  // 翻页时新一页不会因为 id/hot/score 更高而插到已看内容上方，避免“加载更多像刷新”。
-  const sorted = pageItems.flatMap((list) => [...list].sort((a, b) => {
-    if (sort === "最热") return (b.hot || 0) - (a.hot || 0);
-    if (sort === "高分") return (b.score || 0) - (a.score || 0);
-    return b.id - a.id;
-  }));
+  // 长剧保持原有本地排序；短剧/漫剧由服务端 sort 决定顺序。
+  const sorted = cate === "long"
+    ? pageItems.flatMap((list) => [...list].sort((a, b) => {
+        if (localSort === "最热") return (b.hot || 0) - (a.hot || 0);
+        if (localSort === "高分") return (b.score || 0) - (a.score || 0);
+        return b.id - a.id;
+      }))
+    : items;
 
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
@@ -258,19 +286,29 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
           </div>
           <button onClick={() => setSearching(true)} aria-label="搜索短剧" className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
         </div>
-        <div className="px-4 pb-3 flex gap-2">
-          {(["最新", "最热", "高分"] as const).map((s) => (
-            <button key={s} onClick={() => setSort(s)}
-              className={`px-4 h-8 rounded-(--r-ctl) text-[12px] font-semibold pressable ${sort === s ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
-              style={sort === s ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{s}</button>
-          ))}
-        </div>
+        {cate === "long" ? (
+          <div className="px-4 pb-3 flex gap-2">
+            {(["最新", "最热", "高分"] as const).map((s) => (
+              <button key={s} onClick={() => setLocalSort(s)}
+                className={`px-4 h-8 rounded-(--r-ctl) text-[12px] font-semibold pressable ${localSort === s ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
+                style={localSort === s ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{s}</button>
+            ))}
+          </div>
+        ) : (
+          <div className="px-4 pb-3 flex gap-2">
+            {CHANNEL_SORTS.map((s) => (
+              <button key={s.value} onClick={() => changeServerSort(s.value)}
+                className={`px-4 h-8 rounded-(--r-ctl) text-[12px] font-semibold pressable ${serverSort === s.value ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
+                style={serverSort === s.value ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{s.label}</button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex-1 scroll-y px-4 pt-3 pb-8">
         {sorted.length ? (
           <Masonry videos={sorted} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: sorted.map((x) => x.id), index: sorted.findIndex((x) => x.id === v.id), title: name })} />
         ) : err ? (
-          <Empty icon={<IGrid size={26} />} title="加载失败" sub={err} action="重试" onAction={loadMore} />
+          <Empty icon={<IGrid size={26} />} title="加载失败" sub={err} action="重试" onAction={() => void loadMore(true)} />
         ) : (
           <div className="flex justify-center py-10"><div className="w-8 h-8 spinner" /></div>
         )}

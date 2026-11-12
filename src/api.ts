@@ -137,10 +137,10 @@ export const api = {
   tags: () => call<{ categories: TagGroup[] }>("api_tags"),
   tagVideos: (tag: string, page = 1, size = 20) =>
     call<Paged<VideoCard>>("api_tag_videos", { tag, page, size }),
-  category: (cate: string, page = 1, size = 20) =>
-    call<Paged<VideoCard>>("api_category", { cate, page, size }),
-  longVideos: (page = 1, size = 20) =>
-    call<Paged<VideoCard>>("api_long_videos", { page, size }),
+  category: (cate: string, page = 1, size = 20, sort?: string) =>
+    call<Paged<VideoCard>>("api_category", { cate, page, size, sort: sort ?? null }),
+  longVideos: (page = 1, size = 20, sort?: string) =>
+    call<Paged<VideoCard>>("api_long_videos", { page, size, sort: sort ?? null }),
   rank: (kind: "hot" | "recommend" | "potential") =>
     call<{ type: string; items: RankItem[] }>("api_rank", { kind }),
   /** 全站搜索。`kind` 省略时后端只搜短剧；吃瓜帖要显式传 "post"（issue #34）。 */
@@ -154,7 +154,8 @@ export const api = {
       "api_search", { q, page, size, kind: "post" },
     ),
   searchHot: () => call<{ items: HotWord[] }>("api_search_hot"),
-  posts: (page = 1, size = 20) => call<Paged<Post>>("api_posts", { page, size }),
+  posts: (page = 1, size = 20, sort?: string) =>
+    call<Paged<Post>>("api_posts", { page, size, sort: sort ?? null }),
   post: (id: number) => call<Post & { content?: string; video_url?: string }>("api_post", { id }),
   /** 吃瓜帖视频：详情里 video_url 恒为空，地址由 playback 接口下发（可能多段）。 */
   postPlayback: (id: number) => call<{ mode?: number; videos?: { index: number; url: string }[] }>("api_post_playback", { id }),
@@ -173,8 +174,8 @@ export const api = {
   postCollect: (id: number, on: boolean) => invoke<unknown>("api_post_collect", { id, on }),
   postComments: (id: number, page: number, size: number) => call<CommentPage>("api_post_comments", { id, page, size }),
   postCategories: () => call<{ items: PostCategory[] }>("api_post_categories"),
-  postCategory: (route: string, page = 1, size = 20) =>
-    call<Paged<Post>>("api_post_category", { route, page, size }),
+  postCategory: (route: string, page = 1, size = 20, sort?: string) =>
+    call<Paged<Post>>("api_post_category", { route, page, size, sort: sort ?? null }),
   related: (id: number) => call<{ items: VideoCard[] }>("api_related", { id }),
   following: (page = 1, size = 20) => call<Paged<VideoCard>>("api_following", { page, size }),
   user: (id: number) => call<UserProfile>("api_user", { id }),
