@@ -67,7 +67,7 @@ try {
   assert(scrollAfter.top > 0 && scrollAfter.top >= scrollBefore.top - 1, "Loading page 2 must not reset scrollTop");
   report.passed.push("ChannelPage: page 2 appended after page 1 and scrollTop preserved");
 
-  const beforeHot = window.channelPaginationFixture.history.length;
+  const beforeHot = await page.evaluate(() => window.channelPaginationFixture.history.length);
   await page.getByRole("button", { name: "当前热播", exact: true }).click();
   await page.waitForFunction((n) => window.channelPaginationFixture.history.length === n + 1, beforeHot);
   await page.evaluate(() => window.channelPaginationFixture.resolveNext());
@@ -75,7 +75,7 @@ try {
   assert.deepEqual(await titles(), expectedPage(fixture.page1, "hot_window"), "当前热播 must follow server hot_window order");
   report.passed.push("ChannelPage: 当前热播 is server-sorted");
 
-  const beforeRandom = window.channelPaginationFixture.history.length;
+  const beforeRandom = await page.evaluate(() => window.channelPaginationFixture.history.length);
   await page.getByRole("button", { name: "精选推荐", exact: true }).click();
   await page.waitForFunction((n) => window.channelPaginationFixture.history.length === n + 1, beforeRandom);
   await page.evaluate(() => window.channelPaginationFixture.resolveNext());
