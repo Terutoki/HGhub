@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { api, platform as envPlatform } from "./api";
 import { isStrictSecurity, setStrictSecurity as setHtmlStrictSecurity } from "./html";
 import type { User } from "./types";
+import { readStorage, STORAGE_KEYS } from "./storage";
 
 export type Platform = "android" | "ios" | "windows" | "macos" | "linux";
 export type Theme = "dark" | "light";
@@ -75,7 +76,7 @@ type Persist = {
   preferHevc: boolean;
 };
 
-const LS = "hghub_app_v1";
+const LS = STORAGE_KEYS.app;
 const DEFAULTS: Persist = {
   likes: [], favs: [], history: [], follows: [],
   muted: true, muteOnStartup: true, volume: 0.7, searchHist: [], swipeEp: true, preferHevc: false,
@@ -100,7 +101,8 @@ function normalizeHistory(raw: unknown): WatchProgress[] {
 
 function loadPersist(): Persist {
   try {
-    const raw = localStorage.getItem(LS);
+    const raw = readStorage(LS);
+    const swipeMigration = readStorage(STORAGE_KEYS.swipeEp);
     if (!raw) return DEFAULTS;
     const p = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Persist>) };
     // 只在启动时应用；本次使用中取消静音不会关闭此偏好。
@@ -109,9 +111,9 @@ function loadPersist(): Persist {
        不是用户主动关的，所以这里做一次性迁移；用户之后自己关掉不会再被改回来。 */
     let swipeEp = p.swipeEp !== false;
     try {
-      if (localStorage.getItem("hghub_swipe_ep_v2") !== "1") {
+      if (swipeMigration !== "1") {
         swipeEp = true;
-        localStorage.setItem("hghub_swipe_ep_v2", "1");
+        localStorage.setItem(STORAGE_KEYS.swipeEp, "1");
       }
     } catch { /* ignore */ }
     return { ...p, swipeEp, muteOnStartup, muted: muteOnStartup || p.muted === true, history: normalizeHistory(p.history) };
@@ -122,7 +124,7 @@ function loadPersist(): Persist {
 
 function readTheme(): Theme {
   try {
-    return localStorage.getItem("hghub_theme") === "light" ? "light" : "dark";
+    return readStorage(STORAGE_KEYS.theme) === "light" ? "light" : "dark";
   } catch {
     return "dark";
   }
@@ -189,7 +191,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     applyTheme(theme);
-    try { localStorage.setItem("hghub_theme", theme); } catch { /* ignore */ }
+    try { localStorage.setItem(STORAGE_KEYS.theme, theme); } catch { /* ignore */ }
   }, [theme]);
 
   useEffect(() => {

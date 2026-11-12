@@ -61,6 +61,9 @@ jobs:
       - name: Diagnostic copy
         run: pnpm test:diagnostic-copy
 
+      - name: Storage migration
+        run: pnpm test:storage-migration
+
       - name: Playback diagnostics
         run: pnpm test:playback
 

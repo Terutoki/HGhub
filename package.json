@@ -13,6 +13,7 @@
     "test:channel-pagination": "node scripts/test-channel-pagination.mjs",
     "test:mobile-layout": "node scripts/test-mobile-layout.mjs",
     "test:diagnostic-copy": "node scripts/test-diagnostic-copy.mjs",
+    "test:storage-migration": "node scripts/test-storage-migration.mjs",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build",

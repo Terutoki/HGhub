@@ -16,7 +16,7 @@
 //! * Android 没有注册表可读，系统「Wi-Fi 代理」同样不被 reqwest 采用；
 //!   安卓上只有 VPN/TUN 模式（VpnService 抓全流量）才有效。
 //!
-//! 排查手段：环境变量 `HGHUB_PROXY=http://127.0.0.1:7897` 可强制指定代理，
+//! 排查手段：环境变量 `HGHUBX_PROXY=http://127.0.0.1:7897` 可强制指定代理，
 //! 进程里的 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` 由 reqwest `system-proxy` 读取；
 //! Linux 桌面还会读 GNOME 的 `gsettings` 手动代理（http/socks），无需用户手动设置。
 //! `net_diag` 命令会输出 DNS/HTTP/环境变量与探测到的代理（脱敏）快照。
@@ -113,11 +113,10 @@ pub fn set_base(url: &str) -> Result<String, String> {
 pub const UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-/// 手动指定代理（排查 / 公司内网用）：`HGHUB_PROXY=http://127.0.0.1:7897`。
+/// 手动指定代理（排查 / 公司内网用）：`HGHUBX_PROXY=http://127.0.0.1:7897`。
 /// 不设时交给 reqwest 的 `system-proxy` 探测（注册表 + 环境变量）。
 fn proxy_override() -> Option<String> {
-    std::env::var("HGHUB_PROXY")
-        .ok()
+    crate::env::var("PROXY")
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
@@ -130,7 +129,7 @@ fn env_proxy_set() -> bool {
 }
 
 /// 应用层最终采用的显式代理（不含环境变量——那部分交给 reqwest）。
-/// 优先级：`HGHUB_PROXY` > 进程环境变量（reqwest 处理）> Linux GNOME gsettings。
+/// 优先级：`HGHUBX_PROXY` > 进程环境变量（reqwest 处理）> Linux GNOME gsettings。
 fn detected_proxy() -> Option<String> {
     if let Some(p) = proxy_override() {
         return Some(p);
@@ -304,7 +303,7 @@ async fn client_for(raw: &str) -> Result<(url::Url, Arc<reqwest::Client>), Strin
     client_for_dns(raw, false).await
 }
 
-/// 是否处于「有代理」状态：显式代理（`HGHUB_PROXY`）、系统代理（Linux GNOME / Windows 注册表 / macOS scutil）或进程环境变量。
+/// 是否处于「有代理」状态：显式代理（`HGHUBX_PROXY`）、系统代理（Linux GNOME / Windows 注册表 / macOS scutil）或进程环境变量。
 /// 有代理时域名交给代理解析，本地不再做 DNS 固定与 IP 校验（被污染的 DNS 不影响代理链路）。
 fn proxy_active() -> bool {
     detected_proxy().is_some()
@@ -788,7 +787,7 @@ pub async fn diagnose() -> Value {
             "HTTPS_PROXY": std::env::var("HTTPS_PROXY").ok().map(|p| redact_proxy(&p)),
             "ALL_PROXY": std::env::var("ALL_PROXY").ok().map(|p| redact_proxy(&p)),
             "NO_PROXY": std::env::var("NO_PROXY").ok().map(|_| "[已配置，列表已隐藏]"),
-            "HGHUB_PROXY": proxy_override().map(|p| redact_proxy(&p)),
+            "HGHUBX_PROXY": proxy_override().map(|p| redact_proxy(&p)),
             "GNOME_PROXY": gnome_proxy().map(|p| redact_proxy(&p)),
             "system_proxy": system_proxy_enabled(),
         },
@@ -1103,9 +1102,9 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "联网测试：需要 HGHUB_TEST_MEDIA_URL 为当前有效的媒体地址"]
+    #[ignore = "联网测试：需要 HGHUBX_TEST_MEDIA_URL 为当前有效的媒体地址"]
     async fn media_recovers_from_failed_system_dns() {
-        let raw = std::env::var("HGHUB_TEST_MEDIA_URL").expect("HGHUB_TEST_MEDIA_URL");
+        let raw = crate::env::var("TEST_MEDIA_URL").expect("HGHUBX_TEST_MEDIA_URL");
         let target = url::Url::parse(&raw).unwrap();
         let host = target.host_str().unwrap();
         let port = target.port_or_known_default().unwrap();
@@ -1129,7 +1128,7 @@ mod tests {
         } else {
             assert_eq!(bytes, again);
         }
-        if let Ok(path) = std::env::var("HGHUB_TEST_MEDIA_OUTPUT") {
+        if let Some(path) = crate::env::var("TEST_MEDIA_OUTPUT") {
             std::fs::write(path, bytes).unwrap();
         }
     }
