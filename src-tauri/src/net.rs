@@ -17,7 +17,9 @@
 //!   安卓上只有 VPN/TUN 模式（VpnService 抓全流量）才有效。
 //!
 //! 排查手段：环境变量 `HGHUB_PROXY=http://127.0.0.1:7897` 可强制指定代理，
-//! `net_diag` 命令会输出 DNS/HTTP/环境变量快照。
+//! 进程里的 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` 由 reqwest `system-proxy` 读取；
+//! Linux 桌面还会读 GNOME 的 `gsettings` 手动代理（http/socks），无需用户手动设置。
+//! `net_diag` 命令会输出 DNS/HTTP/环境变量与探测到的代理（脱敏）快照。
 
 use crate::network_policy;
 use base64::engine::general_purpose::STANDARD as B64;
@@ -120,6 +122,141 @@ fn proxy_override() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// 进程环境变量里有没有代理（reqwest 的 `system-proxy` 会自己读这些，不重复应用）。
+fn env_proxy_set() -> bool {
+    ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]
+        .iter()
+        .any(|key| std::env::var(key).ok().is_some_and(|v| !v.trim().is_empty()))
+}
+
+/// 应用层最终采用的显式代理（不含环境变量——那部分交给 reqwest）。
+/// 优先级：`HGHUB_PROXY` > 进程环境变量（reqwest 处理）> Linux GNOME gsettings。
+fn detected_proxy() -> Option<String> {
+    if let Some(p) = proxy_override() {
+        return Some(p);
+    }
+    if env_proxy_set() {
+        return None;
+    }
+    gnome_proxy()
+}
+
+#[cfg(target_os = "linux")]
+fn unquote(s: &str) -> String {
+    let s = s.trim();
+    if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+/// 读 GNOME 系统代理配置（gsettings）。gsettings 不存在 / schema 缺失时返回 None。
+#[cfg(target_os = "linux")]
+fn gsettings_get(schema: &str, key: &str) -> Option<String> {
+    let out = std::process::Command::new("gsettings")
+        .args(["get", schema, key])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(unquote(&String::from_utf8_lossy(&out.stdout)))
+}
+
+#[cfg(target_os = "linux")]
+fn format_proxy_url(scheme: &str, host: &str, port: &str) -> String {
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    format!("{scheme}://{host}:{port}")
+}
+
+/// Linux 桌面（GNOME）的固定手动代理：`mode=manual` 时取 http，为空再试 socks。
+/// PAC（mode=auto）不支持，返回 None。
+#[cfg(target_os = "linux")]
+fn gnome_proxy() -> Option<String> {
+    if gsettings_get("org.gnome.system.proxy", "mode").as_deref() != Some("manual") {
+        return None;
+    }
+    let http_host = gsettings_get("org.gnome.system.proxy.http", "host").unwrap_or_default();
+    let http_port = gsettings_get("org.gnome.system.proxy.http", "port").unwrap_or_default();
+    if !http_host.is_empty() && !http_port.is_empty() {
+        return Some(format_proxy_url("http", &http_host, &http_port));
+    }
+    let socks_host = gsettings_get("org.gnome.system.proxy.socks", "host").unwrap_or_default();
+    let socks_port = gsettings_get("org.gnome.system.proxy.socks", "port").unwrap_or_default();
+    if !socks_host.is_empty() && !socks_port.is_empty() {
+        return Some(format_proxy_url("socks5", &socks_host, &socks_port));
+    }
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn gnome_proxy() -> Option<String> {
+    None
+}
+
+/// Windows 系统代理：读 `HKCU\...\Internet Settings`，`ProxyEnable=1` 且 `ProxyServer`
+/// 非空即视为已启用。reqwest 已开 `system-proxy` 会自动按注册表走，这里只返回 bool。
+#[cfg(target_os = "windows")]
+fn windows_proxy_enabled() -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
+    else {
+        return false;
+    };
+    let enabled: u32 = match key.get_value("ProxyEnable") {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    if enabled != 1 {
+        return false;
+    }
+    key.get_value::<String, _>("ProxyServer")
+        .is_ok_and(|server| !server.trim().is_empty())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn windows_proxy_enabled() -> bool {
+    false
+}
+
+/// macOS 系统代理：`scutil --proxy` 输出里 HTTP/HTTPS/SOCKS 任一项 Enable=1 即视为已启用。
+#[cfg(target_os = "macos")]
+fn macos_proxy_enabled() -> bool {
+    let Ok(out) = std::process::Command::new("scutil").arg("--proxy").output() else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    ["HTTPEnable", "HTTPSEnable", "SOCKSEnable"]
+        .iter()
+        .any(|key| {
+            text.lines().any(|line| {
+                let mut parts = line.splitn(2, ':');
+                parts.next().map(str::trim) == Some(*key)
+                    && parts.next().map(|value| value.trim() == "1").unwrap_or(false)
+            })
+        })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_proxy_enabled() -> bool {
+    false
+}
+
+/// 操作系统级系统代理是否已启用（Windows 注册表 / macOS scutil / Linux GNOME），只报 bool。
+fn system_proxy_enabled() -> bool {
+    windows_proxy_enabled() || macos_proxy_enabled() || gnome_proxy().is_some()
+}
+
 /// 按**当前**系统代理设置新建一个客户端。
 ///
 /// 注意：reqwest 的 `system-proxy` 只在构建时读一次注册表 / 环境变量。代理软件被关掉后，
@@ -138,9 +275,9 @@ fn build_client(host: &str, addrs: &[SocketAddr]) -> Result<reqwest::Client, Str
     if !addrs.is_empty() {
         builder = builder.resolve_to_addrs(host, addrs);
     }
-    if let Some(p) = proxy_override() {
+    if let Some(p) = detected_proxy() {
         // 错误信息不能含原始代理 URL（其中可能有用户名/密码）。
-        let proxy = reqwest::Proxy::all(&p).map_err(|_| "HGHUB_PROXY 配置无效（已隐藏原始值）")?;
+        let proxy = reqwest::Proxy::all(&p).map_err(|_| "代理配置无效（已隐藏原始值）")?;
         builder = builder.proxy(proxy);
     }
     builder
@@ -167,19 +304,32 @@ async fn client_for(raw: &str) -> Result<(url::Url, Arc<reqwest::Client>), Strin
     client_for_dns(raw, false).await
 }
 
+/// 是否处于「有代理」状态：显式代理（`HGHUB_PROXY`）、系统代理（Linux GNOME / Windows 注册表 / macOS scutil）或进程环境变量。
+/// 有代理时域名交给代理解析，本地不再做 DNS 固定与 IP 校验（被污染的 DNS 不影响代理链路）。
+fn proxy_active() -> bool {
+    detected_proxy().is_some()
+        || env_proxy_set()
+        || windows_proxy_enabled()
+        || macos_proxy_enabled()
+}
+
 async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<reqwest::Client>), String> {
     let strict = network_policy::strict_security();
     let target = network_policy::parse_target_with_mode(raw, strict)?;
     let host = target.host_str().ok_or("目标缺少主机名")?;
     let port = target.port_or_known_default().ok_or("目标端口无效")?;
-    let key = format!("{strict}:{host}:{port}:{public_dns}");
+    let proxy = proxy_active();
+    let key = format!("{strict}:{host}:{port}:{public_dns}:{proxy}");
     {
         let cache = CLIENTS.lock().map_err(|_| "HTTP 客户端锁失败")?;
         if let Some(http) = cached_client(&cache, &key, Instant::now()) {
             return Ok((target, http));
         }
     }
-    let (addrs, ttl) = if public_dns {
+    let (addrs, ttl) = if proxy {
+        // 有代理：跳过本地解析与 IP 校验，addrs 留空，域名交给代理。
+        (Vec::new(), CLIENT_TTL)
+    } else if public_dns {
         let resolver = build_client(crate::media_dns::HOST, &crate::media_dns::BOOTSTRAP)?;
         let resolution = crate::media_dns::resolve(&resolver, host, port).await?;
         network_policy::check_addresses_with_mode(&resolution.addresses, strict)?;
@@ -639,6 +789,8 @@ pub async fn diagnose() -> Value {
             "ALL_PROXY": std::env::var("ALL_PROXY").ok().map(|p| redact_proxy(&p)),
             "NO_PROXY": std::env::var("NO_PROXY").ok().map(|_| "[已配置，列表已隐藏]"),
             "HGHUB_PROXY": proxy_override().map(|p| redact_proxy(&p)),
+            "GNOME_PROXY": gnome_proxy().map(|p| redact_proxy(&p)),
+            "system_proxy": system_proxy_enabled(),
         },
         "runtime": {
             "os": std::env::consts::OS,

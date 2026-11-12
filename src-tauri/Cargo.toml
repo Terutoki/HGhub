@@ -33,6 +33,7 @@ time = { version = "0.3", features = ["formatting"] }
 reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls",
   "system-proxy",
+  "socks",
   "gzip",
   "brotli",
   "json",
@@ -76,6 +77,10 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
   "WKWebViewConfiguration",
   "WKPreferences",
 ] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# 读 HKCU Internet Settings 判断系统代理是否启用（只报 bool，地址交给 reqwest system-proxy）。
+winreg = "0.56"
 
 [profile.release]
 panic = "abort"
