@@ -10,6 +10,7 @@ import { IBack, IChevR, IGlobe, IGrid, ISearch, ITrophy } from "../icons";
 export const CHANNELS = [
   { cate: "ai-duanju", name: "AI成人短剧", desc: "高能反转 · 一口气看完" },
   { cate: "ai-manju", name: "AI成人漫剧", desc: "国创漫剧 · 每周更新" },
+  { cate: "long", name: "长剧", desc: "完整长篇 · 剧情连播" },
 ] as const;
 
 /* ================= 分类总览 ================= */
@@ -44,7 +45,7 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
         const result = await api.posts(1, 8);
         if (mounted.current) setPosts(result?.items || []);
       } else {
-        const result = await api.category(key, 1, 8);
+        const result = key === "long" ? await api.longVideos(1, 8) : await api.category(key, 1, 8);
         if (mounted.current) setRows(m => ({ ...m, [key]: result?.items || [] }));
       }
     } catch (error) {
@@ -144,16 +145,16 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
           );
         })}
 
-        {/* 吃瓜 */}
-        <section aria-label="黄果吃瓜" className="mb-5 a-rise">
+        {/* 博客 */}
+        <section aria-label="博客" className="mb-5 a-rise">
           <button onClick={() => push({ kind: "posts" })}
             className="w-full flex items-center gap-2.5 px-4 mb-2.5 text-left pressable group">
             <span className="w-[36px] h-[36px] rounded-(--r-sm) tonal flex items-center justify-center shrink-0 text-primary">
               <IGrid size={19} strokeWidth={1.9} />
             </span>
             <span className="flex-1 min-w-0">
-              <span className="block text-[15.5px] font-semibold text-on leading-tight">黄果吃瓜</span>
-              <span className="block text-[10.5px] text-mut mt-0.5 truncate">圈内爆料 · 每日更新</span>
+              <span className="block text-[15.5px] font-semibold text-on leading-tight">博客</span>
+              <span className="block text-[10.5px] text-mut mt-0.5 truncate">热门吃瓜 · AI原创</span>
             </span>
             <span className="flex items-center gap-0.5 text-[11.5px] text-mut group-hover:text-primary transition-colors">
               全部<IChevR size={14} />
@@ -171,7 +172,7 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
                 <div className="mt-1.5 text-[11.5px] font-medium text-on clamp-1 leading-tight">{post.title}</div>
               </button>
             ))}
-            {!posts.length && <PreviewStatus name="黄果吃瓜" loading={loading.posts !== false} error={errors.posts} onRetry={() => void loadPreview("posts")} />}
+            {!posts.length && <PreviewStatus name="博客" loading={loading.posts !== false} error={errors.posts} onRetry={() => void loadPreview("posts")} />}
           </div>
         </section>
 
@@ -209,7 +210,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
     setLoading(true);
     try {
       const next = page + 1;
-      const res = await api.category(cate, next, 20);
+      const res = cate === "long" ? await api.longVideos(next, 20) : await api.category(cate, next, 20);
       setPageItems((prev) => {
         const seen = new Set(prev.flat().map((x) => x.id));
         return [...prev, (res?.items || []).filter((x) => !seen.has(x.id))];

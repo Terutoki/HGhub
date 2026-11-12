@@ -585,6 +585,18 @@ pub async fn api_feed(state: State<'_, Api>, page: u32, size: u32) -> Result<Val
         .await
 }
 
+/// 长剧频道：`/api/videos/long`，返回分页视频卡（结构同 api_feed）。
+#[tauri::command]
+pub async fn api_long_videos(
+    state: State<'_, Api>,
+    page: u32,
+    size: u32,
+) -> Result<Value, String> {
+    state
+        .get(&format!("/api/videos/long?page={page}&size={size}"))
+        .await
+}
+
 /* ───────────────────────── 专题 / 标签 ───────────────────────── */
 
 /// 专题列表：`/api/topics` 返回 data.items（标题/封面/简介/收录数）。

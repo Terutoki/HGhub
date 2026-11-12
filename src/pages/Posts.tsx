@@ -9,12 +9,18 @@ import { IBack, IFireF, IPlayF, ISearch } from "../icons";
 import { handleArticleClick, sanitizeHtml } from "../html";
 import { InplaceSearch } from "../components/InplaceSearch";
 
-/* ================= 吃瓜列表 ================= */
+/* 博客两个固定栏目：热门吃瓜 / AI原创。名称优先用站点下发的 PostCategory。 */
+const BLOG_TABS = [
+  { route: "remen-chigua", name: "热门吃瓜" },
+  { route: "ai-yuanchuang", name: "AI原创" },
+] as const;
+
+/* ================= 博客列表 ================= */
 export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean }) {
   const { push } = useStore();
   const [searching, setSearching] = useState(false);
   const [cats, setCats] = useState<PostCategory[]>([]);
-  const [cat, setCat] = useState<string>(""); // 空 = 全部
+  const [cat, setCat] = useState<string>(BLOG_TABS[0].route);
   const [items, setItems] = useState<Post[]>([]);
   const [page, setPage] = useState(0);
   const [pages, setPages] = useState(1);
@@ -33,7 +39,7 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
     busy.current = true;
     setLoading(true);
     try {
-      const res = cat ? await api.postCategory(cat, next, 20) : await api.posts(next, 20);
+      const res = await api.postCategory(cat, next, 20);
       setItems((prev) => {
         const base = reset ? [] : prev;
         const seen = new Set(base.map((x) => x.id));
@@ -65,26 +71,29 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pages, cat]);
 
+  const tabs = BLOG_TABS.map((tab) => {
+    const live = cats.find((c) => c.route === tab.route);
+    return { route: tab.route, name: live?.name || tab.name };
+  });
+
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-2 bg-s1" style={{ paddingTop: "var(--sat, 0px)" }}>
         <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={19} /></button>
-        <span className="text-[14px] font-bold text-on">黄果吃瓜</span>
-        <span className="text-[10.5px] text-mut ml-1">圈内爆料</span>
-        <button onClick={() => setSearching(true)} aria-label="搜索吃瓜帖" className="ml-auto w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
+        <span className="text-[14px] font-bold text-on">博客</span>
+        <span className="text-[10.5px] text-mut ml-1">热门吃瓜 · AI原创</span>
+        <button onClick={() => setSearching(true)} aria-label="搜索博客" className="ml-auto w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
       </div>
-      {cats.length > 0 && (
-        <div className="shrink-0 flex gap-2 px-4 py-2.5 overflow-x-auto no-bar">
-          <button onClick={() => pickCat("")}
-            className={`shrink-0 px-4 h-8 rounded-(--r-ctl) text-[12px] font-semibold pressable ${cat === "" ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
-            style={cat === "" ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>全部</button>
-          {cats.map((c) => (
-            <button key={c.route} onClick={() => pickCat(c.route)}
-              className={`shrink-0 px-4 h-8 rounded-(--r-ctl) text-[12px] font-semibold pressable ${cat === c.route ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
-              style={cat === c.route ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{c.name}</button>
-          ))}
-        </div>
-      )}
+      <div className="shrink-0 flex gap-1 mx-4 my-2.5 p-1 rounded-(--r-ctl) bg-s3">
+        {tabs.map((tab) => {
+          const active = cat === tab.route;
+          return (
+            <button key={tab.route} onClick={() => pickCat(tab.route)}
+              className={`flex-1 h-8 rounded-(--r-sm) text-[12px] font-semibold pressable ${active ? "tonal text-on-sec" : "text-mut"}`}
+              style={active ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{tab.name}</button>
+          );
+        })}
+      </div>
       <div className="flex-1 scroll-y px-3 pt-3 pb-8">
         {items.length ? (
           <div className={`${wide ? "columns-3 xl:columns-4" : "columns-2"} gap-2`}>
@@ -106,12 +115,12 @@ export function PostsPage({ onBack, wide }: { onBack: () => void; wide: boolean 
         ) : loading ? (
           <div className="flex justify-center py-12"><div className="w-8 h-8 spinner" /></div>
         ) : (
-          <Empty icon={<IFireF size={26} />} title="暂无吃瓜内容" sub="稍后再来看看" />
+          <Empty icon={<IFireF size={26} />} title={cat === "ai-yuanchuang" ? "暂无 AI 原创内容" : "暂无吃瓜内容"} sub="稍后再来看看" />
         )}
         <div ref={sentinel} className="h-10" />
         {loading && <div className="flex justify-center py-2"><div className="w-6 h-6 spinner" /></div>}
       </div>
-      {searching && <InplaceSearch kind="post" wide={wide} onClose={() => setSearching(false)} onOpenPost={(p) => push({ kind: "post", id: p.id })} />}
+      {searching && <InplaceSearch kind="post" postLabel="博客帖子" wide={wide} onClose={() => setSearching(false)} onOpenPost={(p) => push({ kind: "post", id: p.id })} />}
     </div>
   );
 }
@@ -167,7 +176,7 @@ export function PostDetail({ id, onBack, active = true }: { id: number; onBack: 
     <div className="absolute inset-0 bg-bg flex flex-col">
       <div className="shrink-0 flex items-center gap-2 px-2 bg-s1" style={{ paddingTop: isMobile ? "var(--sat, 0px)" : 0, height: isMobile ? "calc(44px + var(--sat, 0px))" : 44 }}>
         <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={19} /></button>
-        <span className="text-[13.5px] font-semibold text-on">吃瓜详情</span>
+        <span className="text-[13.5px] font-semibold text-on">博客详情</span>
       </div>
 
       <div className="flex-1 scroll-y pb-8">
