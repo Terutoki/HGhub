@@ -585,10 +585,13 @@ pub async fn api_feed(state: State<'_, Api>, page: u32, size: u32) -> Result<Val
         .await
 }
 
-/// 长剧频道：`/api/videos/long`，返回分页视频卡（结构同 api_feed）；`sort=new` 为最新。
+/// 原创频道，返回分页视频卡（结构同 api_feed）。
+/// `cate="all"` 走 `/api/videos?is_original=1`；`ai-duanju`/`ai-manju` 走
+/// `/api/videos/category/{cate}?is_original=1`。
 #[tauri::command]
-pub async fn api_long_videos(
+pub async fn api_original_videos(
     state: State<'_, Api>,
+    cate: String,
     page: u32,
     size: u32,
     sort: Option<String>,
@@ -597,9 +600,12 @@ pub async fn api_long_videos(
         Some(s) if !s.trim().is_empty() => format!("&sort={s}"),
         _ => String::new(),
     };
-    state
-        .get(&format!("/api/videos/long?page={page}&size={size}{sort}"))
-        .await
+    let path = if cate == "all" {
+        format!("/api/videos?is_original=1&page={page}&size={size}{sort}")
+    } else {
+        format!("/api/videos/category/{cate}?is_original=1&page={page}&size={size}{sort}")
+    };
+    state.get(&path).await
 }
 
 /* ───────────────────────── 专题 / 标签 ───────────────────────── */

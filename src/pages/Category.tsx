@@ -10,7 +10,7 @@ import { IBack, IChevR, IGlobe, IGrid, ISearch, ITrophy } from "../icons";
 export const CHANNELS = [
   { cate: "ai-duanju", name: "AI成人短剧", desc: "高能反转 · 一口气看完" },
   { cate: "ai-manju", name: "AI成人漫剧", desc: "国创漫剧 · 每周更新" },
-  { cate: "long", name: "长剧", desc: "完整长篇 · 剧情连播" },
+  { cate: "original", name: "原创", desc: "黄果原创 · 独家好剧" },
 ] as const;
 
 /* ================= 分类总览 ================= */
@@ -45,8 +45,8 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
         const result = await api.posts(1, 8, "latest");
         if (mounted.current) setPosts(result?.items || []);
       } else {
-        const result = key === "long"
-          ? await api.longVideos(1, 8, "new")
+        const result = key === "original"
+          ? await api.originalVideos("all", 1, 8, "new")
           : await api.category(key, 1, 8, "latest");
         if (mounted.current) setRows(m => ({ ...m, [key]: result?.items || [] }));
       }
@@ -201,11 +201,20 @@ const CHANNEL_SORTS = [
   { value: "random", label: "精选推荐" },
 ] as const;
 
+const ORIGINAL_CATES = [
+  { value: "all", label: "全部原创" },
+  { value: "ai-manju", label: "原创漫剧" },
+  { value: "ai-duanju", label: "原创短剧" },
+] as const;
+
+const originalSort = (cate: (typeof ORIGINAL_CATES)[number]["value"]) =>
+  cate === "all" ? "new" : "latest";
+
 export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: string; onBack: () => void; wide: boolean }) {
   const { push } = useStore();
   const [searching, setSearching] = useState(false);
   const [serverSort, setServerSort] = useState<(typeof CHANNEL_SORTS)[number]["value"]>("latest");
-  const [localSort, setLocalSort] = useState<"最新" | "最热" | "高分">("最新");
+  const [originalCate, setOriginalCate] = useState<(typeof ORIGINAL_CATES)[number]["value"]>("all");
   const [pageItems, setPageItems] = useState<VideoCard[][]>([]);
   const items = pageItems.flat();
   const [page, setPage] = useState(0);
@@ -216,15 +225,15 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
   const requestSeq = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
 
-  const loadMore = async (reset = false, sortOverride = serverSort) => {
+  const loadMore = async (reset = false, sortOverride = serverSort, originalCateOverride = originalCate) => {
     const seq = reset ? ++requestSeq.current : requestSeq.current;
     if (!reset && (busy.current || page >= pages)) return;
     busy.current = true;
     setLoading(true);
     try {
       const next = reset ? 1 : page + 1;
-      const res = cate === "long"
-        ? await api.longVideos(next, 20, "new")
+      const res = cate === "original"
+        ? await api.originalVideos(originalCateOverride, next, 20, originalSort(originalCateOverride))
         : await api.category(cate, next, 20, sortOverride);
       if (seq !== requestSeq.current) return;
       setPageItems((prev) => {
@@ -255,6 +264,16 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
     void loadMore(true, value);
   };
 
+  const changeOriginalCate = (value: (typeof ORIGINAL_CATES)[number]["value"]) => {
+    if (value === originalCate) return;
+    setOriginalCate(value);
+    setPageItems([]);
+    setPage(0);
+    setPages(1);
+    setErr(null);
+    void loadMore(true, originalSort(value), value);
+  };
+
   useEffect(() => { void loadMore(true); /* eslint-disable-next-line */ }, []);
   useEffect(() => {
     const el = sentinel.current;
@@ -264,15 +283,6 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pages]);
-
-  // 长剧保持原有本地排序；短剧/漫剧由服务端 sort 决定顺序。
-  const sorted = cate === "long"
-    ? pageItems.flatMap((list) => [...list].sort((a, b) => {
-        if (localSort === "最热") return (b.hot || 0) - (a.hot || 0);
-        if (localSort === "高分") return (b.score || 0) - (a.score || 0);
-        return b.id - a.id;
-      }))
-    : items;
 
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
@@ -284,17 +294,18 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
             <div className="text-[17px] font-bold text-on leading-tight">{name}</div>
             <div className="text-[10.5px] text-mut">共 {items.length} 部 · 已加载 {page}/{Math.max(pages, 1)} 页</div>
           </div>
-          <button onClick={() => setSearching(true)} aria-label="搜索短剧" className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
+          <button onClick={() => setSearching(true)} aria-label={cate === "original" ? "搜索原创" : "搜索短剧"} className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></button>
         </div>
-        {cate === "long" ? (
-          <div className="px-4 pb-3 flex gap-2">
-            {(["最新", "最热", "高分"] as const).map((s) => (
-              <button key={s} onClick={() => setLocalSort(s)}
-                className={`px-4 h-8 rounded-(--r-ctl) text-[12px] font-semibold pressable ${localSort === s ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
-                style={localSort === s ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{s}</button>
+        {cate === "original" && (
+          <div className="px-4 pb-2 flex gap-2">
+            {ORIGINAL_CATES.map((s) => (
+              <button key={s.value} onClick={() => changeOriginalCate(s.value)}
+                className={`px-4 h-8 rounded-(--r-ctl) text-[12px] font-semibold pressable ${originalCate === s.value ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
+                style={originalCate === s.value ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{s.label}</button>
             ))}
           </div>
-        ) : (
+        )}
+        {cate !== "original" && (
           <div className="px-4 pb-3 flex gap-2">
             {CHANNEL_SORTS.map((s) => (
               <button key={s.value} onClick={() => changeServerSort(s.value)}
@@ -305,8 +316,8 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
         )}
       </div>
       <div className="flex-1 scroll-y px-4 pt-3 pb-8">
-        {sorted.length ? (
-          <Masonry videos={sorted} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: sorted.map((x) => x.id), index: sorted.findIndex((x) => x.id === v.id), title: name })} />
+        {items.length ? (
+          <Masonry videos={items} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: items.map((x) => x.id), index: items.findIndex((x) => x.id === v.id), title: name })} />
         ) : err ? (
           <Empty icon={<IGrid size={26} />} title="加载失败" sub={err} action="重试" onAction={() => void loadMore(true)} />
         ) : (
@@ -314,7 +325,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
         )}
         <div ref={sentinel} className="h-10" />
         {loading && <div className="flex justify-center py-3"><div className="w-6 h-6 spinner" /></div>}
-        {!loading && page >= pages && sorted.length > 0 && (
+        {!loading && page >= pages && items.length > 0 && (
           <div className="text-center text-[10.5px] text-dim py-3">— 已经到底啦 —</div>
         )}
       </div>

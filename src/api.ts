@@ -58,7 +58,7 @@ export const logLine = (msg: string) => invoke("debug_log", { msg }).catch(() =>
 const NET_FAIL = /dns|timed? ?out|timeout|connection|refused|reset|unreachable|broken pipe|tls|ssl|handshake|证书|网络|连接/i;
 /** 只读命令：链路抖动时可以安全重试一次；写操作绝不重试（避免重复提交） */
 const READ_ONLY = new Set([
-  "api_me", "api_feed", "api_long_videos", "api_category", "api_rank", "api_search",
+  "api_me", "api_feed", "api_original_videos", "api_category", "api_rank", "api_search",
   "api_posts", "api_post", "api_post_comments", "api_video", "api_play", "api_comments",
   "api_topics", "api_topic", "api_tags", "api_tag_videos", "api_search_hot",
   "api_post_playback", "api_post_categories", "api_post_category", "api_related", "api_following", "api_user", "api_user_stats", "api_user_videos",
@@ -139,8 +139,8 @@ export const api = {
     call<Paged<VideoCard>>("api_tag_videos", { tag, page, size }),
   category: (cate: string, page = 1, size = 20, sort?: string) =>
     call<Paged<VideoCard>>("api_category", { cate, page, size, sort: sort ?? null }),
-  longVideos: (page = 1, size = 20, sort?: string) =>
-    call<Paged<VideoCard>>("api_long_videos", { page, size, sort: sort ?? null }),
+  originalVideos: (cate: string, page = 1, size = 20, sort?: string) =>
+    call<Paged<VideoCard>>("api_original_videos", { cate, page, size, sort: sort ?? null }),
   rank: (kind: "hot" | "recommend" | "potential") =>
     call<{ type: string; items: RankItem[] }>("api_rank", { kind }),
   /** 全站搜索。`kind` 省略时后端只搜短剧；吃瓜帖要显式传 "post"（issue #34）。 */
