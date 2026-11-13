@@ -1,12 +1,13 @@
 import { Button, Input } from "./ios/controls";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { fmtTime } from "../api";
 import { useSeekInput } from "../useSeekInput";
 import { ICheck, ICompress, IExpand, ILockF, INext, IPauseF, IPip, IPlayF, ITheater, IVertSwap, IVol, IVolMute } from "../icons";
+import type { PlaybackClock } from "../playbackClock";
 
 type Props = {
   paused: boolean;
-  time: number;
+  clock: PlaybackClock;
   duration: number;
   buffered?: number;
   rate: number;
@@ -34,15 +35,16 @@ type Props = {
   onToggleSwipe?: () => void;
 };
 
-const clock = (s: number) => fmtTime(Math.max(0, s || 0)).padStart(5, "0");
+const formatClock = (s: number) => fmtTime(Math.max(0, s || 0)).padStart(5, "0");
 
 export default function PlayerControls({
-  paused, time, duration, buffered = 0, rate, muted, volume, theater = false, fullscreen = false,
+  paused, clock, duration, buffered = 0, rate, muted, volume, theater = false, fullscreen = false,
   visible = true, seekEnabled = true, seekKey, nextDisabled = false, nextTitle = "下一个", swipeEp = false, onToggle, onSeek, onSeekInteraction, onRate, onMute, onVolume, onPip, onLock, onTheater, onFullscreen, onNext, onToggleSwipe,
 }: Props) {
   const [speedOpen, setSpeedOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
-  const seek = useSeekInput({ time, duration, enabled: seekEnabled, resetKey: seekKey, onInteraction: onSeekInteraction,
+  const clockTime = useSyncExternalStore(clock.subscribe, clock.getSnapshot, clock.getSnapshot);
+  const seek = useSeekInput({ time: clockTime, duration, enabled: seekEnabled, resetKey: seekKey, onInteraction: onSeekInteraction,
     onSeek: (target, input) => onSeek(target, `desktop_${input}`) });
   const pct = duration ? Math.min(100, (seek.time / duration) * 100) : 0;
 
@@ -84,7 +86,7 @@ export default function PlayerControls({
             <IVertSwap size={19} strokeWidth={1.7} />
           </Button>
         )}
-        <span className="player-timecode"><span>{clock(seek.time)}</span><span className="player-time-separator">/</span>{clock(duration)}</span>
+        <span className="player-timecode"><span>{formatClock(seek.time)}</span><span className="player-time-separator">/</span>{formatClock(duration)}</span>
         <div className="player-control-spacer" />
         <div className="player-speed-slot">
           <Button className={`player-control player-speed ${rate !== 1 ? "is-on" : ""}`} aria-label="倍速" aria-haspopup="menu" aria-expanded={speedOpen}

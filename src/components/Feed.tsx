@@ -14,6 +14,7 @@ import { RowCard } from "./cards";
 import { setBackHandler } from "../back";
 import { copyText } from "../clipboard";
 import { tracePlayback } from "../playbackDiagnostics";
+import { createPlaybackClock } from "../playbackClock";
 import {
   IBack, IBoltF, IChevR, IChevronDown, IChevronUp, IClose, ICommentF, ICompress, IExpand, IFileText, IHeart, IHeartF,
   ILink, IList, ILockF, IPauseF, IPlayF, ISearch, IStar, IStarF, IVertSwap, IVol, IVolMute,
@@ -46,6 +47,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const boxRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoHandle>(null);
   const [index, setIndex] = useState(startIndex);
+  const [renderIndex, setRenderIndex] = useState(startIndex);
   const [epMap, setEpMap] = useState<Record<number, number>>(() => (startEp ? { [videoIds[startIndex]]: startEp } : {}));
   const [details, setDetails] = useState<Record<number, Detail>>({});
   const [playUrls, setPlayUrls] = useState<Record<string, string>>({});
@@ -55,9 +57,10 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const [related, setRelated] = useState<VideoCard[]>([]);
 
   const [time, setTime] = useState(0);
+  const playbackClock = useMemo(() => createPlaybackClock(), []);
   const [duration, setDuration] = useState(0);
   const [vsize, setVsize] = useState({ w: 0, h: 0 });
-  const [buffered, setBuffered] = useState(0);
+  const bufferedRef = useRef(0);
   const [paused, setPaused] = useState(false);
   const [controlsLocked, setControlsLocked] = useState(false);
   const [rate, setRate] = useState(1);
@@ -143,7 +146,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   /* 观看进度：onTime 里每 5 秒落一次；退出播放页时再用 liveRef 兜一次 */
   const onTimeTick = (t: number) => {
     liveRef.current = { id: curId, ep: curEp, dur: duration, t };
-    setTime(t);
+    if (isDesktop) playbackClock.publish(t);
+    else setTime(t);
     const now = Date.now();
     if (duration > 0 && now - lastSaveRef.current > 5000) {
       lastSaveRef.current = now;
@@ -159,7 +163,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     if (r && r.key === playKey && r.t > 1 && (!d || r.t < d - 3)) {
       resumeRef.current = null;
       videoRef.current?.seek(r.t, "history_resume");
-      setTime(r.t);
+      if (isDesktop) playbackClock.publish(r.t);
+      else setTime(r.t);
     }
   };
 
@@ -243,6 +248,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     if (!el) return;
     const h = el.clientHeight || 1;
     const i = Math.max(0, Math.min(videoIds.length - 1, Math.round(el.scrollTop / h)));
+    if (isDesktop) setRenderIndex(i);
     if (onNearEnd && i >= videoIds.length - 3) onNearEnd();
     window.clearTimeout(swipeTimer.current);
     swipeTimer.current = window.setTimeout(() => resolveSwipe(i), 150);
@@ -388,7 +394,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
 
   /* 切换条目/集数时重置播放状态 */
   useEffect(() => {
-    setTime(0); setDuration(0); setBuffered(0); setErr(""); setWaiting(true); setPaused(false); setDescOpen(false);
+    setTime(0); setDuration(0); bufferedRef.current = 0; setErr(""); setWaiting(true); setPaused(false); setDescOpen(false);
+    playbackClock.publish(0);
     setVsize({ w: 0, h: 0 });
     setPortraitFit("contain");
   }, [playKey]);
@@ -409,6 +416,10 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   /* 键盘 */
   useEffect(() => {
     if (!active || controlsLocked) return;
+    const seekRelative = (delta: number) => {
+      const current = videoRef.current?.el()?.currentTime ?? 0;
+      videoRef.current?.seek(Math.max(0, current + delta), "keyboard_shortcut");
+    };
     const fn = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
@@ -417,8 +428,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
         case "ArrowDown": e.preventDefault(); stepDir(1); break;
         case "ArrowUp": e.preventDefault(); stepDir(-1); break;
         case " ": e.preventDefault(); videoRef.current?.toggle(); break;
-        case "ArrowLeft": e.preventDefault(); videoRef.current?.seek(Math.max(0, time - 5), "keyboard_shortcut"); break;
-        case "ArrowRight": e.preventDefault(); videoRef.current?.seek(time + 5, "keyboard_shortcut"); break;
+        case "ArrowLeft": e.preventDefault(); seekRelative(-5); break;
+        case "ArrowRight": e.preventDefault(); seekRelative(5); break;
         case "f": case "F": toggleFull(); break;
         case "t": case "T": setTheater((v) => !v); break;
         case "m": case "M": setMuted((v) => !v); break;
@@ -432,7 +443,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, controlsLocked, panel, time, index, stepDir]);
+  }, [active, controlsLocked, panel, index, stepDir]);
 
   /* 安卓返回键：面板打开时先关面板 */
   useEffect(() => {
@@ -855,21 +866,28 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
       onPointerDown={() => { if (!isDesktop && fs) wake(); }}>
       <div className="absolute inset-0" inert={controlsLocked}>
       {/* 氛围背景 */}
-      <div className="absolute inset-0 scale-110 blur-3xl opacity-25 pointer-events-none">
-        {posterUrl && <Image src={posterUrl} alt="" className="w-full h-full object-cover" />}
-      </div>
+      {!isDesktop && posterUrl && (
+        <div className="absolute inset-0 scale-110 blur-3xl opacity-25 pointer-events-none">
+          <Image src={posterUrl} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
 
       <div ref={boxRef} onScroll={onScroll}
         className={`absolute inset-y-0 left-0 no-bar ${fs ? "overflow-hidden" : "overflow-y-scroll snap-y snap-mandatory overscroll-y-contain"}`}
         style={{ right: isDesktop && panel ? 372 : 0, transition: "right .3s cubic-bezier(.2,0,0,1)" }}>
         {videoIds.map((vid, i) => {
           const isActive = i === index;
+          const sectionClass = `${fs && !isActive ? "hidden" : "relative w-full h-full"} snap-start snap-always overflow-hidden`;
+          // Preserve scroll/snap geometry without mounting distant posters and controls.
+          if (isDesktop && Math.abs(i - index) > 1 && Math.abs(i - renderIndex) > 1) {
+            return <section key={vid} className={sectionClass} aria-hidden="true" />;
+          }
           return (
-            <section key={vid} className={`${fs && !isActive ? "hidden" : "relative w-full h-full"} snap-start snap-always overflow-hidden`}>
+            <section key={vid} className={sectionClass}>
               {isActive && playUrl ? (
                 <div className="absolute inset-0" style={{ touchAction: swipeEp ? "none" : "pan-y" }}
                   onPointerDown={onDown} onPointerMove={onMove} onPointerUp={(e) => onUp(false, e)} onPointerCancel={(e) => onUp(true, e)} onLostPointerCapture={(e) => onUp(true, e)}>
-                <div style={{ position: "absolute", inset: 0, transform: `translate3d(${zoom.x}px, ${zoom.y}px, 0) scale(${zoom.s})`, transformOrigin: "center center", transition: zoom.g ? "none" : "transform .18s ease-out" }}>
+                <div style={{ position: "absolute", inset: 0, transform: isDesktop ? undefined : `translate3d(${zoom.x}px, ${zoom.y}px, 0) scale(${zoom.s})`, transformOrigin: "center center", transition: isDesktop || zoom.g ? "none" : "transform .18s ease-out" }}>
                 <VideoSurface ref={videoRef} src={playUrl} poster={posterUrl} autoPlay active={active} muted={muted}
                   diagnosticContext={{ active, view: mode, kind, video_id: curId, episode: curEp }}
                   volume={volume} rate={effRate}
@@ -1112,7 +1130,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   不加任何压暗层——黑边彻底去掉，全靠文字阴影保读；
                   进度条轨道几乎不可见，只用白点标播放位置。 */}
               {!fs && !clean && !isDesktop && (
-                <div className="absolute inset-x-0 z-20" style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset}px)` }}>
+                <div className={`absolute inset-x-0 z-20 ${mode === "home" ? "ios-home-caption" : ""}`} style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset}px)` }}>
                   <div className="relative px-4 pb-2 flex items-center gap-2">
                     <p className="flex-1 min-w-0 text-[15px] font-semibold leading-snug hg-ink-2 hg-ov-shadow-strong clamp-2">{meta.title}</p>
                   </div>
@@ -1187,7 +1205,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
       {/* 桌面控制条 */}
       {isDesktop && (
         <PlayerControls
-          paused={paused} time={time} duration={duration} buffered={buffered} rate={rate}
+          paused={paused} duration={duration} buffered={bufferedRef.current} rate={rate}
+          clock={playbackClock}
           muted={muted} volume={volume} theater={theater} fullscreen={fullscreen}
           visible={active && !idle}
           seekEnabled={active && !controlsLocked}
@@ -1197,7 +1216,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
           swipeEp={swipeEp}
           onToggleSwipe={() => { setSwipeEp(!swipeEp); toast(swipeEp ? "上下划切集已关闭" : "上下划切集已开启"); }}
           onToggle={() => videoRef.current?.toggle()}
-          onSeek={(t, source) => { videoRef.current?.seek(t, source); setTime(t); }}
+          onSeek={(t, source) => { videoRef.current?.seek(t, source); playbackClock.publish(t); }}
           onSeekInteraction={(phase, input, target, pointerTarget) => videoRef.current?.trace(`seek.input.${phase}`, { input, target, pointer_target: pointerTarget })}
           onRate={(r) => { setRate(r); videoRef.current?.rate(r); }}
           onMute={() => setMuted((m) => !m)}

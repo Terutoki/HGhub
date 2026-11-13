@@ -52,6 +52,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
   const recoverCountRef = useRef(0);
   const recoverTimerRef = useRef<number | null>(null);
   const nearEndFiredRef = useRef(false);
+  const reportedSizeRef = useRef({ w: 0, h: 0 });
   const [ready, setReady] = useState(false);
   const { trace, requestSeek } = usePlayerDiagnostics(videoRef, hlsRef, { ...diagnosticContext, active, resource: mediaResource(src) });
   const activity = usePlaybackActivity(videoRef, hlsRef, { active, autoPlay, src, trace });
@@ -60,7 +61,10 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
     if (!v) return;
     const w = v.videoWidth || 0;
     const h = v.videoHeight || 0;
-    if (w > 0 && h > 0) onSize?.(w, h);
+    if (w > 0 && h > 0 && (w !== reportedSizeRef.current.w || h !== reportedSizeRef.current.h)) {
+      reportedSizeRef.current = { w, h };
+      onSize?.(w, h);
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -96,6 +100,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
     const video = videoRef.current;
     if (!video || !src) return;
     setReady(false);
+    reportedSizeRef.current = { w: 0, h: 0 };
     nearEndFiredRef.current = false;
     recoverCountRef.current = 0;
     const onVideoResize = () => reportSize(video);

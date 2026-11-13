@@ -99,8 +99,27 @@ try {
       await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, test.theme);
       if (test.android) await page.waitForFunction(() => window.__IOS_UI_FIXTURE__.hasHardwareBack());
       check("original navigation and persisted appearance");
-
+      if (test.mobile) {
+        const videoNav = page.locator('nav[aria-label="主导航"]');
+        await videoNav.waitFor();
+        const navBackground = await videoNav.evaluate(nav => nav.getAttribute("data-over-video"));
+        assert.equal(navBackground, "true", "Home navigation declares its video background");
+        await nav.getByRole("button", { name: "首页", exact: true }).click();
+        const homeVideoMaterial = await page.evaluate(() => {
+          const nav = document.querySelector('nav[aria-label="主导航"]');
+          const selected = nav?.querySelector('[aria-current="page"]');
+          const unselected = nav?.querySelector('button:not([aria-current="page"])');
+          const glass = nav?.querySelector(".hg-glass");
+          return { video: nav?.getAttribute("data-over-video"), selected: selected && getComputedStyle(selected).color,
+            unselected: unselected && getComputedStyle(unselected).color, background: glass && getComputedStyle(glass).backgroundColor };
+        });
+        assert.equal(homeVideoMaterial.selected, "rgb(25, 25, 25)", "Home selection uses dark ink over the selected light surface");
+        assert.equal(homeVideoMaterial.unselected, "rgb(242, 240, 235)", "Home navigation labels stay bright over dark video");
+        assert.equal(homeVideoMaterial.background, "rgba(28, 28, 32, 0.94)", "Home navigation keeps an opaque dark glass surface over black video");
+        check("home navigation text contrast on video in both themes");
+      }
       await nav.getByRole("button", { name: "搜索", exact: true }).click();
+
       const query = page.getByRole("textbox", { name: "搜索短剧、帖子、题材…" });
       await query.fill("都市"); await query.press("Enter");
       await page.getByRole("button", { name: titles[0], exact: true }).waitFor();
@@ -184,6 +203,8 @@ try {
       await page.getByRole("button", { name: "设置", exact: true }).click();
       const security = page.getByRole("switch", { name: "严格安全模式", exact: true });
       await security.waitFor();
+      await page.locator(".ios-setting-group").first().waitFor();
+      await page.waitForTimeout(550);
       const controlRadii = await page.evaluate(() => {
         const icon = document.querySelector(".ios-page .ios-icon-button");
         const settingIcon = document.querySelector(".ios-setting-icon");
@@ -210,17 +231,22 @@ try {
       const switches = page.getByRole("switch");
       result.switches = [];
       for (const item of await switches.all()) {
+        await item.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(300);
         const bounds = await item.boundingBox();
         const target = await item.evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight }));
         const visual = await item.evaluate(el => {
           const track = getComputedStyle(el.querySelector(".ios-switch-track"));
           const thumb = getComputedStyle(el.querySelector(".ios-switch-thumb"));
+          const rail = el.querySelector(".ios-switch-track").getBoundingClientRect();
+          const thumbBounds = el.querySelector(".ios-switch-thumb").getBoundingClientRect();
           const shell = el.closest(".plat-android");
           const activeIndicator = document.querySelector(".ios-mobile-nav .hg-drop .ios-liquid-fill");
           const activeTab = document.querySelector('.ios-mobile-nav-item[aria-current="page"]');
           return { platform: el.dataset.platform, trackWidth: track.width, trackHeight: track.height,
             trackRadius: track.borderRadius, trackBorder: track.borderTopWidth, trackBackground: track.backgroundImage,
             thumbBackground: thumb.backgroundImage, thumbRadius: thumb.borderRadius,
+            thumbWidth: thumbBounds.width, thumbLeft: thumbBounds.left - rail.left, thumbRight: rail.right - thumbBounds.right,
             activeIndicator: activeIndicator ? getComputedStyle(activeIndicator).backgroundColor : null,
             activeTabColor: activeTab ? getComputedStyle(activeTab).color : null,
             androidShell: !!shell };
@@ -228,6 +254,11 @@ try {
         result.switches.push({ label: await item.getAttribute("aria-label"), width: target.width, height: target.height, visualBounds: bounds, ...visual });
         assert(target.width >= 44 && target.height >= (test.android ? 48 : 44), "Switch touch target meets the platform minimum");
         assert(["true", "false"].includes(await item.getAttribute("aria-checked")), "Switch exposes its state");
+        const off = await item.evaluate(el => {
+          const rail = el.querySelector(".ios-switch-track").getBoundingClientRect();
+          const thumb = el.querySelector(".ios-switch-thumb").getBoundingClientRect();
+          return { left: thumb.left - rail.left, right: rail.right - thumb.right };
+        });
         if (test.android) {
           assert.equal(visual.platform, "android", "Android selects its platform switch variant");
           assert.equal(visual.trackWidth, "52px", "Android uses the compact Material switch track");
@@ -244,9 +275,37 @@ try {
           assert.equal(visual.trackRadius, "999px", "iOS keeps its capsule track");
           assert.equal(visual.thumbRadius, "50%", "iOS keeps its circular thumb");
         }
+        const initiallyOn = await item.getAttribute("aria-checked") === "true";
+        const expectedLeft = initiallyOn ? (test.android ? 25 : 27) : (test.android ? 0 : 3);
+        const expectedRight = initiallyOn ? (test.android ? 1 : 3) : (test.android ? 26 : 27);
+        assert(Math.abs(off.left - expectedLeft) < 1.1, `${visual.platform} switch thumb reaches the correct left/right endpoint`);
+        assert(Math.abs(off.right - expectedRight) < 1.1, `${visual.platform} switch thumb clears the correct track edge`);
+        const wasOn = await item.getAttribute("aria-checked") === "true";
+        const targetState = !wasOn;
+        await item.evaluate((el, on) => { el.dataset.state = on ? "on" : "off"; }, targetState);
+        await page.waitForTimeout(360);
+        const moved = await item.evaluate(el => {
+          const rail = el.querySelector(".ios-switch-track").getBoundingClientRect();
+          const thumb = el.querySelector(".ios-switch-thumb").getBoundingClientRect();
+          return { left: thumb.left - rail.left, right: rail.right - thumb.right };
+        });
+        const turnedOn = targetState;
+        const movedLeft = turnedOn ? (test.android ? 25 : 27) : (test.android ? 0 : 3);
+        const movedRight = turnedOn ? (test.android ? 1 : 3) : (test.android ? 26 : 27);
+        assert(Math.abs(moved.left - movedLeft) < 1.1 && Math.abs(moved.right - movedRight) < 1.1,
+          `${visual.platform} switch reaches both travel endpoints after activation`);
+        const actualState = await item.getAttribute("aria-checked") === "true";
+        assert.equal(actualState, wasOn, "Layout probe leaves the application switch state unchanged");
+        await item.evaluate((el, on) => { el.dataset.state = on ? "on" : "off"; }, wasOn);
+        await page.waitForTimeout(360);
       }
-      await security.click();
-      await page.waitForFunction(() => document.querySelector('[role=switch][aria-label="严格安全模式"]')?.getAttribute("aria-checked") === "false");
+      const switchTravel = await security.evaluate(el => {
+        const rail = el.querySelector(".ios-switch-track").getBoundingClientRect();
+        const thumb = el.querySelector(".ios-switch-thumb").getBoundingClientRect();
+        return { left: thumb.left - rail.left, right: rail.right - thumb.right };
+      });
+      const strictState = await security.getAttribute("aria-checked") === "true";
+      assert.equal(switchTravel.left, strictState ? (test.android ? 25 : 27) : (test.android ? 0 : 3), "Security switch thumb matches its state");
       const appearance = page.getByRole("group", { name: "外观模式", exact: true });
       const androidShell = page.locator(".plat-android").first();
       const material = await page.locator(".ios-setting-group").first().evaluate(el => {
