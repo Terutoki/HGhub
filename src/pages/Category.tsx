@@ -219,6 +219,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
   const busy = useRef(false);
   const requestSeq = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
+  const scrollContainer = useRef<HTMLDivElement>(null);
 
   const loadMore = async (reset = false, sortOverride: string = serverSort, originalCateOverride = originalCate) => {
     const seq = reset ? ++requestSeq.current : requestSeq.current;
@@ -251,6 +252,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
 
   const changeServerSort = (value: (typeof CHANNEL_SORTS)[number]["value"]) => {
     if (value === serverSort) return;
+    if (scrollContainer.current) scrollContainer.current.scrollTop = 0;
     setServerSort(value);
     setPageItems([]);
     setPage(0);
@@ -261,6 +263,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
 
   const changeOriginalCate = (value: (typeof ORIGINAL_CATES)[number]["value"]) => {
     if (value === originalCate) return;
+    if (scrollContainer.current) scrollContainer.current.scrollTop = 0;
     setOriginalCate(value);
     setPageItems([]);
     setPage(0);
@@ -308,7 +311,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
           </div>
         )}
       </div>
-      <div className="flex-1 scroll-y px-4 pt-3 pb-8">
+      <div ref={scrollContainer} className="flex-1 scroll-y px-4 pt-3 pb-8">
         {items.length ? (
           <Masonry videos={items} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: items.map((x) => x.id), index: items.findIndex((x) => x.id === v.id), title: name })} />
         ) : err ? (

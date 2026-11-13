@@ -32,7 +32,7 @@ try {
 
   await page.goto(`${origin}tests/channel-pagination.html`);
   await page.waitForFunction(() => window.channelPaginationFixture.history.length === 1);
-  await page.evaluate(() => window.channelPaginationFixture.resolveNext());
+  await page.evaluate(() => window.channelPaginationFixture.resolveNext("latest", 1));
   await page.waitForFunction(() => document.querySelectorAll(".ios-media-grid .ios-poster-title").length === 20);
 
   const fixture = await page.evaluate(() => ({
@@ -55,7 +55,7 @@ try {
   await scroller.evaluate(el => { el.scrollTop = el.scrollHeight; });
   await page.waitForFunction(() => window.channelPaginationFixture.history.length === 2);
   const scrollBefore = await scroller.evaluate(el => ({ top: el.scrollTop, height: el.clientHeight, scrollHeight: el.scrollHeight }));
-  await page.evaluate(() => window.channelPaginationFixture.resolveNext());
+  await page.evaluate(() => window.channelPaginationFixture.resolveNext("latest", 2));
   await page.waitForFunction(() => document.querySelectorAll(".ios-media-grid .ios-poster-title").length === 40);
   await page.waitForTimeout(250);
 
@@ -72,7 +72,7 @@ try {
     const h = window.channelPaginationFixture.history;
     return h.length > 0 && h[h.length - 1].args.sort === "hot_window";
   });
-  await page.evaluate(() => window.channelPaginationFixture.resolveNext());
+  await page.evaluate(() => window.channelPaginationFixture.resolveNext("hot_window", 1));
   await page.waitForFunction(() => document.querySelectorAll(".ios-media-grid .ios-poster-title").length === 20);
   assert.deepEqual(await titles(), expectedPage(fixture.page1, "hot_window"), "当前热播 must follow server hot_window order");
   report.passed.push("ChannelPage: 当前热播 is server-sorted");
@@ -82,7 +82,7 @@ try {
     const h = window.channelPaginationFixture.history;
     return h.length > 0 && h[h.length - 1].args.sort === "random";
   });
-  await page.evaluate(() => window.channelPaginationFixture.resolveNext());
+  await page.evaluate(() => window.channelPaginationFixture.resolveNext("random", 1));
   await page.waitForFunction(() => document.querySelectorAll(".ios-media-grid .ios-poster-title").length === 20);
   assert.deepEqual(await titles(), expectedPage(fixture.page1, "random"), "精选推荐 must follow server random order");
   report.passed.push("ChannelPage: 精选推荐 is server-sorted");
