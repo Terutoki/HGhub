@@ -22,6 +22,11 @@ try {
   const sourceSvg = readFileSync(join(root, "src-tauri", "icons", "ios", "source.svg"), "utf8");
   assert(!/<rect[^>]*\brx\s*=|<rect[^>]*\bstroke\s*=/.test(sourceSvg), "iOS source must not pre-mask its full-bleed background");
   assert(readdirSync(join(root, "src-tauri", "icons", "ios")).includes("source.svg"), "Tracked iOS source is missing");
+  const generator = readFileSync(join(root, "scripts", "generate-ios-icons.mjs"), "utf8");
+  assert.match(generator, /execFileSync\(process\.execPath/,
+    "iOS icon generation must invoke the installed CLI through Node on Windows");
+  assert.doesNotMatch(generator, /pnpm\.cmd/,
+    "iOS icon generation must not spawn pnpm.cmd from beforeBuildCommand");
   const build = readFileSync(join(root, "scripts", "build-ios-unsigned.sh"), "utf8");
   const generateIndex = build.indexOf("node scripts/generate-ios-icons.mjs");
   const syncIndex = build.indexOf("node scripts/sync-ios-icons.mjs --required");
