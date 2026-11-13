@@ -239,6 +239,19 @@ try {
       await page.getByRole("button", { name: titles[0], exact: true }).locator(".ios-score-badge").waitFor();
       assert.equal(await page.getByRole("button", { name: titles[0], exact: true }).locator(".ios-score-badge").innerText(), "8.5");
       assert.equal(await page.getByRole("button", { name: titles[1], exact: true }).locator(".ios-score-badge").count(), 0, "Unrated videos do not show an empty score badge");
+      const scorePosition = await page.getByRole("button", { name: titles[0], exact: true }).evaluate(el => {
+        const art = el.querySelector(".ios-poster-art");
+        const score = el.querySelector(".ios-score-badge");
+        if (!art || !score) return null;
+        const artBounds = art.getBoundingClientRect();
+        const scoreBounds = score.getBoundingClientRect();
+        return { top: scoreBounds.top - artBounds.top, right: artBounds.right - scoreBounds.right,
+          artWidth: artBounds.width, scoreWidth: scoreBounds.width };
+      });
+      assert(scorePosition, "Rated poster exposes a positioned score badge");
+      assert(Math.abs(scorePosition.top - 9) < 1.1, "Score badge stays in the cover's top corner");
+      assert(Math.abs(scorePosition.right - 9) < 1.1, "Score badge stays in the cover's right corner");
+      assert(scorePosition.top < scorePosition.artWidth * .25, "Score badge is not vertically centered on the cover");
       result.posterWidth = Math.round(await page.getByRole("button", { name: titles[0], exact: true }).evaluate(el => el.getBoundingClientRect().width));
       await shot("favorites");
       const profileSegment = page.getByRole("group", { name: "我的内容", exact: true });

@@ -14,6 +14,7 @@
     "test:mobile-layout": "node scripts/test-mobile-layout.mjs",
     "test:ios-ui": "node scripts/test-ios-ui.mjs",
     "test:ios-icons": "node scripts/test-ios-icons.mjs",
+    "test:score-badge": "node scripts/test-score-badge-position.mjs",
     "test:ui-performance": "node scripts/test-ui-performance.mjs",
     "test:ios-overlays": "node scripts/test-ios-overlays.mjs",
     "test:diagnostic-copy": "node scripts/test-diagnostic-copy.mjs",

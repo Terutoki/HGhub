@@ -470,7 +470,6 @@ html.theme-light {
 .ios-topic-card.ios-button { border-radius:var(--r-sm); }
 .ios-topic-card .ios-topic-art.ios-surface { border-radius:var(--r-sm); }
 .ios-poster-badge { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ios-poster-art.has-poster-badge>.ios-score-badge { top:42px; }
 @media(hover:hover) and (pointer:fine) {
   .ios-icon-button:not(:disabled):hover,.ios-collection-link:hover { background-color:var(--p-s2); }
   .ios-icon-button.ios-button-primary:hover { background-color:var(--p-primary); }
