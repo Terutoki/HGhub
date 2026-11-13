@@ -12,6 +12,8 @@
 //!   （`HKCU\...\Internet Settings` 的 `ProxyEnable`/`ProxyServer`/`ProxyOverride`）。
 //!   本 crate 用 `default-features = false`，早先漏了这个 feature ⇒ 永远直连，
 //!   只有 TUN/虚拟网卡这种网络层接管才「看起来能用」。
+//! * macOS 的 `system-proxy` 会读取系统 HTTP/HTTPS 代理；iOS 没有对应的系统代理读取，
+//!   仍由 VPN/TUN 接管流量，或通过 `HGHUBX_PROXY` 显式指定代理。
 //! * 即使开了 `system-proxy`，PAC（`AutoConfigURL`）也不被支持，只认固定代理。
 //! * Android 没有注册表可读，系统「Wi-Fi 代理」同样不被 reqwest 采用；
 //!   安卓上只有 VPN/TUN 模式（VpnService 抓全流量）才有效。
@@ -303,13 +305,25 @@ async fn client_for(raw: &str) -> Result<(url::Url, Arc<reqwest::Client>), Strin
     client_for_dns(raw, false).await
 }
 
-/// 是否处于「有代理」状态：显式代理（`HGHUBX_PROXY`）、系统代理（Linux GNOME / Windows 注册表 / macOS scutil）或进程环境变量。
+/// Apple 平台复用 reqwest 的底层匹配器，区分 HTTP/HTTPS、NO_PROXY 和系统 SOCKS-only 配置。
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn proxy_active(target: &url::Url) -> bool {
+    if detected_proxy().is_some() {
+        return true;
+    }
+    crate::apple_proxy::routes_target(
+        &hyper_util::client::proxy::matcher::Matcher::from_system(),
+        target.as_str(),
+    )
+}
+
+/// 其他平台：显式代理、进程环境变量、Linux GNOME 或 Windows 系统代理。
 /// 有代理时域名交给代理解析，本地不再做 DNS 固定与 IP 校验（被污染的 DNS 不影响代理链路）。
-fn proxy_active() -> bool {
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+fn proxy_active(_target: &url::Url) -> bool {
     detected_proxy().is_some()
         || env_proxy_set()
         || windows_proxy_enabled()
-        || macos_proxy_enabled()
 }
 
 async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<reqwest::Client>), String> {
@@ -317,7 +331,7 @@ async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<re
     let target = network_policy::parse_target_with_mode(raw, strict)?;
     let host = target.host_str().ok_or("目标缺少主机名")?;
     let port = target.port_or_known_default().ok_or("目标端口无效")?;
-    let proxy = proxy_active();
+    let proxy = proxy_active(&target);
     let key = format!("{strict}:{host}:{port}:{public_dns}:{proxy}");
     {
         let cache = CLIENTS.lock().map_err(|_| "HTTP 客户端锁失败")?;

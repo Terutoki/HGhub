@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { api, APP_VERSION, fmt, fmtTime, isMobile, platform } from "../api";
 import type { Detail } from "../types";
 import { useStore } from "../store";
-import { Avatar, Empty, Img } from "../components/ui";
+import { Avatar, Empty } from "../components/ui";
 import { MediaCard } from "../components/cards";
+import { CollectionLink, CollectionLinks } from "../components/CollectionLink";
 import { IChevR, IClock, IHeart, ILogout, ISettings, IStar, IUser, IUserF } from "../icons";
 
 /* 我的：结构固定（资料卡 + 我的收藏 / 观看历史）。
@@ -84,30 +85,16 @@ export default function Profile({ wide }: { wide: boolean }) {
 
         {/* 关注 / 我的主页 */}
         {user && (
-          <div className="grid grid-cols-2 gap-2.5 mt-4">
-            <Button onClick={() => push({ kind: "following" })}
-              className="ios-collection-link flex items-center gap-2.5 p-3 text-left pressable">
-              <span className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><IHeart size={18} /></span>
-              <span className="flex-1">
-                <span className="block text-[14px] font-semibold text-on">我的关注</span>
-                <span className="block text-[12px] text-mut mt-0.5">关注作者的更新</span>
-              </span>
-              <IChevR size={14} className="text-mut" />
-            </Button>
-            <Button onClick={() => push({ kind: "user", id: user.id, name: user.nickname })}
-              className="ios-collection-link flex items-center gap-2.5 p-3 text-left pressable">
-              <span className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><IUserF size={18} /></span>
-              <span className="flex-1">
-                <span className="block text-[14px] font-semibold text-on">我的主页</span>
-                <span className="block text-[12px] text-mut mt-0.5">我的作品与资料</span>
-              </span>
-              <IChevR size={14} className="text-mut" />
-            </Button>
-          </div>
+          <CollectionLinks className="ios-profile-links mt-4">
+            <CollectionLink icon={<IHeart size={18} />} title="我的关注" subtitle="关注作者的更新"
+              onClick={() => push({ kind: "following" })} />
+            <CollectionLink icon={<IUserF size={18} />} title="我的主页" subtitle="我的作品与资料"
+              onClick={() => push({ kind: "user", id: user.id, name: user.nickname })} />
+          </CollectionLinks>
         )}
 
         {/* 我的内容 */}
-        <SegmentedControl className="mt-4" aria-label="我的内容" data-active-index={tab === "fav" ? 0 : 1}>
+        <SegmentedControl className="mt-4" aria-label="我的内容" activeIndex={tab === "fav" ? 0 : 1}>
           {([["fav", "我的收藏"], ["history", "观看历史"]] as const).map(([k, l]) => (
             <Button aria-pressed={tab === k} key={k} onClick={() => setTab(k)}>{l}</Button>
           ))}
@@ -120,7 +107,7 @@ export default function Profile({ wide }: { wide: boolean }) {
             <div className={`ios-media-grid ${wide ? "is-wide" : ""}`}>
               {cards.map((c) => {
                 const progress = progressOf(c.id);
-                return <MediaCard key={c.id} title={c.title} cover={c.cover}
+                return <MediaCard key={c.id} title={c.title} cover={c.cover} score={c.score}
                   badge={c.is_finished ? "已完结" : `${c.episode_count} 集`}
                   subtitle={c.tags?.slice(0, 2).join(" · ")}
                   progress={progress ? `第 ${progress.ep} 集 · ${fmtTime(progress.t)}` : undefined}

@@ -82,7 +82,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
                 <div className="text-[14px] text-on">外观</div>
                 <div className="text-[12px] text-mut">{themePreference === "system" ? `跟随系统（当前${theme === "dark" ? "深色" : "浅色"}）` : theme === "dark" ? "深色外观" : "浅色外观"}</div>
               </div>
-              <SegmentedControl className="ios-appearance-picker" aria-label="外观模式" data-active-index={(["system", "light", "dark"] as const).indexOf(themePreference)}>
+              <SegmentedControl className="ios-appearance-picker" aria-label="外观模式" activeIndex={(["system", "light", "dark"] as const).indexOf(themePreference)}>
                 {([['system', '跟随'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => (
                   <Button key={value} type="button" aria-pressed={themePreference === value}
                     onClick={() => setTheme(value)}>

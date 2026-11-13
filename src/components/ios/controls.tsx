@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type FormHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { Children, forwardRef, type ButtonHTMLAttributes, type CSSProperties, type FormHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../../cn";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -8,7 +8,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   children, className = "", type = "button", variant, disabled, ...props
 }, ref) {
   const intent = variant ?? (/(^|\s)(bg-primary|brand-grad)(\s|$)/.test(className) ? "primary" : "ghost");
-  const card = (props.style?.paddingTop !== undefined || props.style?.aspectRatio !== undefined) || /(?:ios-poster|ios-row-card|ios-rank-row|ios-account-card|ios-collection-link)/.test(className);
+  const card = (props.style?.paddingTop !== undefined || props.style?.aspectRatio !== undefined) || /(?:ios-poster|ios-row-card|ios-rank-row|ios-account-card|ios-collection-link|ios-topic-card)/.test(className);
   return <button {...props} ref={ref} type={type} disabled={disabled}
     data-ui="button" data-variant={intent} data-card={card || undefined}
     className={cn("ios-button", `ios-button-${intent}`, className)}>
@@ -29,10 +29,17 @@ export const Surface = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
     {children}
   </div>;
 });
-export function SegmentedControl({ children, className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div {...props} className={cn("ios-segmented", className)} role={props.role ?? "group"} aria-label={props["aria-label"] ?? "切换内容"}>
+type SegmentedStyle = CSSProperties & { "--segment-count": number; "--segment-index": number };
+export function SegmentedControl({ children, className, style, activeIndex, ...props }: HTMLAttributes<HTMLDivElement> & { activeIndex: number }) {
+  const segments = Children.toArray(children);
+  const count = Math.max(segments.length, 1);
+  const index = Math.max(0, Math.min(activeIndex, count - 1));
+  /* The selected index lives here so segment count and indicator travel cannot drift apart. */
+  /* Keep rendered segment children untouched for focus and accessibility order. */
+  const segmentStyle = { ...style, "--segment-count": count, "--segment-index": index } as SegmentedStyle;
+  return <div {...props} style={segmentStyle} className={cn("ios-segmented", className)} role={props.role ?? "group"} aria-label={props["aria-label"] ?? "切换内容"}>
     <span className="ios-segmented-indicator" aria-hidden="true" />
-    <span className="ios-segmented-items">{children}</span>
+    <span className="ios-segmented-items">{segments}</span>
   </div>;
 }
 

@@ -1349,7 +1349,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
             <div className="flex flex-col" style={{ height: "72vh" }}>
               {/* 双栏抽屉：详情 / 选集 */}
               <div className="shrink-0 flex items-center gap-2 px-4 pb-2">
-                <SegmentedControl className="flex-1" aria-label="剧集面板" data-active-index={panel === "detail" ? 0 : 1}>
+                <SegmentedControl className="flex-1" aria-label="剧集面板" activeIndex={panel === "detail" ? 0 : 1}>
                   {([["detail", "详情"], ["episodes", "选集"]] as const).map(([k, l]) => (
                     <Button aria-pressed={panel === k} key={k} onClick={() => setPanel(k)}>{l}</Button>
                   ))}

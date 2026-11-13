@@ -52,7 +52,7 @@ export function TopicsPage({ onBack, wide }: { onBack: () => void; wide: boolean
           <div className="grid grid-cols-2 gap-3">
             {items.map((t) => (
               <Button key={t.id} onClick={() => push({ kind: "topic", slug: t.slug, name: t.title })}
-                className="text-left rounded-(--r-md) overflow-hidden bg-s1 elev-1 pressable a-rise">
+                className="ios-topic-card text-left overflow-hidden bg-s1 elev-1 pressable a-rise">
                 <div className="relative w-full" style={{ paddingTop: "56%" }}>
                   <Img src={t.cover} />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
@@ -139,8 +139,8 @@ export function TopicPage({ slug, name, onBack, wide }: { slug: string; name: st
             <div className="scroll-x flex gap-2.5 snap-x">
               {related.map((r) => (
                 <Button key={r.id} onClick={() => push({ kind: "topic", slug: r.slug, name: r.title })}
-                  className="w-[140px] shrink-0 text-left snap-start pressable">
-                  <Surface className="relative w-full rounded-(--r-sm) overflow-hidden bg-s1 elev-1" style={{ paddingTop: "56%" }}>
+                  className="ios-topic-card w-[140px] shrink-0 text-left snap-start pressable">
+                  <Surface className="ios-topic-art relative w-full overflow-hidden bg-s1 elev-1" style={{ paddingTop: "56%" }}>
                     <Img src={r.cover} />
                     <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/55 text-[12px] font-semibold text-white/90">{r.video_count ?? 0} 部</span>
                   </Surface>

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { tracePlayback } from "./playbackDiagnostics";
 import type {
-  CommentPage, Detail, HotWord, Paged, PlayInfo, Post, PostCategory, RankItem, TagGroup, TopicCard, TopicDetail, User, UserProfile, VideoCard,
+  CommentPage, Detail, HotSearchVideo, Paged, PlayInfo, Post, PostCategory, RankItem, TagGroup, TopicCard, TopicDetail, User, UserProfile, VideoCard,
 } from "./types";
 
 /* ── 运行环境 ───────────────────────────────────────────── */
@@ -153,7 +153,7 @@ export const api = {
     call<{ items: Post[]; pagination: Paged<Post>["pagination"]; keyword: string }>(
       "api_search", { q, page, size, kind: "post" },
     ),
-  searchHot: () => call<{ items: HotWord[] }>("api_search_hot"),
+  searchHot: () => call<{ items: HotSearchVideo[] }>("api_search_hot"),
   posts: (page = 1, size = 20, sort?: string) =>
     call<Paged<Post>>("api_posts", { page, size, sort: sort ?? null }),
   post: (id: number) => call<Post & { content?: string; video_url?: string }>("api_post", { id }),

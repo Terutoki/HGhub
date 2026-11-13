@@ -1,6 +1,6 @@
 export function installFixture({ theme, titles }) {
   const cards = titles.map((title, i) => ({
-    id: i + 1, title, cover: `https://fixture.invalid/poster/${i}`, tags: ["都市", "剧情"], score: 8.5,
+    id: i + 1, title, cover: `https://fixture.invalid/poster/${i}`, tags: ["都市", "剧情"], score: i % 2 === 0 ? 8.5 : 0,
     episode_count: 24, total_episodes: 24, hot: 286000, like_count: 1800, collect_count: 900,
     comment_count: 20, is_finished: true, is_original: 0, description: "界面回归示例数据",
     author: { id: 1, name: "示例作者" },
@@ -33,9 +33,13 @@ export function installFixture({ theme, titles }) {
       if (command === "api_topic") return { topic, videos: paged(cards), related: [] };
       if (command === "api_tags") return { categories: [{ name: "题材", tags: [{ id: 1, name: "都市", slug: "city" }] }] };
       if (command === "api_rank") return paged(cards.map((card, index) => ({ ...card, rank: index + 1, video_id: card.id, metric_value: card.hot, metric_label: "热度" })));
-      if (command === "api_search_hot") return paged(["都市", "重逢", "奇幻", "旅行"].map((word, index) => ({ word, heat: 55000 - index * 1000 })));
+      if (command === "api_search_hot") return paged(titles.map((title, index) => ({ video_id: index + 1, title, plays: `${550 - index * 10}.1w播放量` })));
       if (command === "api_video") return { ...cards[(args.id - 1) % cards.length], counts: { collect: 900, comment: 20, hot: 286000, like: 1800 }, episodes: [] };
-      if (command === "api_login") throw "账号或密码不正确";
+      if (command === "api_login") {
+        if (args.username === "profile-fixture") return { user: { id: 9, username: "fixture", nickname: "示例用户", avatar: "", avatar_color: "#63748b", counts: {} } };
+        throw "账号或密码不正确";
+      }
+      if (command === "api_logout") return { ok: true };
       if (command === "security_set") return args.strict;
       if (command === "api_play") throw "UI fixture has no media";
       if (command === "plugin:app|register_listener" && args.event === "back-button") { backChannel = args.handler; return; }

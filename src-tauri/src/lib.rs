@@ -1,4 +1,6 @@
 mod api;
+#[cfg(any(target_os = "macos", target_os = "ios", test))]
+mod apple_proxy;
 mod env;
 #[cfg(target_os = "ios")]
 mod ios_layout;
@@ -13,6 +15,7 @@ mod media_dns;
 mod net;
 mod network_policy;
 mod playback_log;
+mod search_hot;
 mod session;
 
 use api::Api;

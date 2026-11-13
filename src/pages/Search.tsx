@@ -2,11 +2,11 @@ import { Button, Form, Input, SegmentedControl, Surface } from "../components/io
 import { Loader } from "../components/ios/effects";
 import { useEffect, useRef, useState } from "react";
 import { api, fmt, isMobile } from "../api";
-import type { HotWord, Post, RankItem, VideoCard } from "../types";
+import type { HotSearchVideo, Post, RankItem, VideoCard } from "../types";
 import { useStore } from "../store";
 import { MediaCard, Masonry, RankRow } from "../components/cards";
 import { Empty, Img } from "../components/ui";
-import { IBack, IClose, IFireF, IRefresh, ISearch, ITrophy } from "../icons";
+import { IBack, IChevR, IClose, IFireF, IPlayF, IRefresh, ISearch, ITrophy } from "../icons";
 
 const HOT_TAGS = ["都市", "逆袭", "古风", "系统", "后宫", "校园", "仙侠", "职场", "大男主", "御姐", "脑洞", "奇幻"];
 
@@ -25,7 +25,11 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
   const busy = useRef(false);
   /* 请求序号：新关键词或清空时自增，过期请求的结果直接丢弃 */
   const seqRef = useRef(0);
-  const [hotWords, setHotWords] = useState<HotWord[]>([]);
+  const [hotVideos, setHotVideos] = useState<HotSearchVideo[]>([]);
+  const [hotLoading, setHotLoading] = useState(false);
+  const [hotError, setHotError] = useState<string | null>(null);
+  const hotBusy = useRef(false);
+  const hotLoadedAt = useRef(0);
 
   /* 移动端进入搜索页不自动聚焦：iOS 会立刻弹键盘遮住内容（#20）。
      桌面端没有软键盘，聚焦便于直接打字。 */
@@ -33,11 +37,25 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
     if (active && !isMobile) inputRef.current?.focus();
   }, [active]);
 
-  const refreshHot = () => {
-    api.searchHot().then((r) => setHotWords(r?.items || [])).catch(() => {});
+  const refreshHot = async () => {
+    if (hotBusy.current) return;
+    hotBusy.current = true;
+    setHotLoading(true);
+    setHotError(null);
+    try {
+      const res = await api.searchHot();
+      setHotVideos(res.items);
+      hotLoadedAt.current = Date.now();
+    } catch (e) {
+      setHotError(e instanceof Error ? e.message : "热搜榜加载失败，请重试");
+    } finally {
+      hotBusy.current = false;
+      setHotLoading(false);
+    }
   };
   useEffect(() => {
-    if (active) refreshHot();
+    // 切换主导航时短暂复用榜单；手动刷新始终重新获取官网内容。
+    if (active && Date.now() - hotLoadedAt.current > 60_000) void refreshHot();
   }, [active]);
 
   const run = async (keyword: string, p: number, kind: "video" | "post" = tab) => {
@@ -123,24 +141,35 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
       <div className="flex-1 scroll-y px-4 pb-24">
         {!querying ? (
           <>
-            {hotWords.length > 0 && (
-              <Surface className="mt-1 rounded-(--r-md) bg-s2 p-3.5 a-rise">
+            <Surface role="region" aria-label="热搜榜" className="mt-1 rounded-(--r-md) bg-s2 p-3.5 a-rise">
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-[14px] font-semibold text-on/90"><IFireF size={15} className="text-primary" />热搜榜</span>
-                  <Button onClick={refreshHot} className="flex items-center gap-1 text-[12px] text-mut pressable"><IRefresh size={12} />刷新</Button>
+                  <h2 className="flex items-center gap-1.5 text-[14px] font-semibold text-on/90"><IFireF size={15} className="text-primary" />热搜榜</h2>
+                  <Button onClick={() => void refreshHot()} disabled={hotLoading} aria-label="刷新热搜榜"
+                    className="flex items-center gap-1 px-2 text-[12px] text-mut pressable">
+                    {hotLoading ? <Loader className="w-3 h-3" /> : <IRefresh size={12} />}{hotLoading ? "刷新中" : "刷新"}
+                  </Button>
                 </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-3">
-                  {hotWords.slice(0, 10).map((h, i) => (
-                    <Button key={h.word} onClick={() => { setQ(h.word); submit(h.word); }}
-                      className="flex items-center gap-2 min-w-0 text-left pressable">
-                      <span className={`w-4.5 h-4.5 shrink-0 rounded-(--r-xs) flex items-center justify-center text-[12px] font-bold ${i < 3 ? "bg-primary text-on-primary" : "bg-s3 text-dim"}`}>{i + 1}</span>
-                      <span className="truncate text-[13px] text-on/85 flex-1">{h.word}</span>
-                      <span className="text-[12px] text-dim shrink-0">{fmt(h.heat)}</span>
-                    </Button>
-                  ))}
-                </div>
+                {hotError && <p role="status" className="mt-2 text-[12px] text-mut leading-relaxed">
+                  {hotVideos.length > 0 ? "刷新失败，保留上次榜单。" : "热搜榜暂不可用。"}{hotError}
+                </p>}
+                {hotVideos.length > 0 ? (
+                  <ol className="ios-search-hot-grid mt-3" aria-busy={hotLoading}>
+                    {hotVideos.map((video, i) => (
+                      <li key={video.video_id} className="min-w-0">
+                        <Button aria-label={`播放 ${video.title}`} title={video.title} className="ios-search-hot-item"
+                          onClick={() => push({ kind: "feed", videoIds: hotVideos.map(item => item.video_id), index: i, title: "热搜榜" })}>
+                          <span aria-hidden="true" className={`ios-search-hot-rank ${i < 3 ? "text-primary" : "text-mut"}`}>{String(i + 1).padStart(2, "0")}</span>
+                          <span className="ios-search-hot-content">
+                            <span className="ios-search-hot-title">{video.title}</span>
+                            {video.plays && <span className="ios-search-hot-plays"><IPlayF size={10} />{video.plays}</span>}
+                          </span>
+                          <IChevR size={15} className="text-mut" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ol>
+                ) : !hotError && <p role="status" className="mt-3 text-[12px] text-mut">{hotLoading ? "加载中…" : "暂无热搜影片"}</p>}
               </Surface>
-            )}
 
             {searchHist.length > 0 && (
               <div className="mt-1 a-rise">
@@ -180,7 +209,7 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
           </>
         ) : (
           <>
-            <SegmentedControl className="mt-1 mb-3" aria-label="搜索结果类型" data-active-index={tab === "video" ? 0 : 1}>
+            <SegmentedControl className="mt-1 mb-3" aria-label="搜索结果类型" activeIndex={tab === "video" ? 0 : 1}>
               {([["video", "视频"], ["post", "帖子"]] as const).map(([k, label]) => (
                 <Button aria-pressed={tab === k} key={k} onClick={() => changeTab(k)}>{label}</Button>
               ))}
@@ -258,7 +287,7 @@ export function RankPage({ onBack, wide }: { onBack: () => void; wide: boolean }
               <div className="text-[12px] text-mut mt-1">{meta.desc} · 每 10 分钟更新</div>
             </div>
           </div>
-          <SegmentedControl className="mt-3" aria-label="榜单类型" data-active-index={RANK_TABS.findIndex(item => item.k === tab)}>
+          <SegmentedControl className="mt-3" aria-label="榜单类型" activeIndex={RANK_TABS.findIndex(item => item.k === tab)}>
             {RANK_TABS.map((t) => (
               <Button aria-pressed={tab === t.k} key={t.k} onClick={() => setTab(t.k)}>{t.label}</Button>
             ))}

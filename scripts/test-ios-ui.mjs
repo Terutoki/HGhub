@@ -83,6 +83,27 @@ try {
       }));
       assert(layout.document && layout.grids, `${label}: no horizontal page or media-grid overflow`);
     };
+    const assertSlider = async (group, count, index, label) => {
+      await group.waitFor();
+      await group.evaluate(async el => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await Promise.all(el.getAnimations({ subtree: true }).filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+          .map(animation => animation.finished.catch(() => undefined)));
+      });
+      const geometry = await group.evaluate(el => {
+        const buttons = [...el.querySelectorAll(".ios-segmented-items > button")];
+        const selected = buttons.findIndex(button => button.getAttribute("aria-pressed") === "true");
+        const rectangle = element => { const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height }; };
+        return { count: buttons.length, selected, declaredCount: el.style.getPropertyValue("--segment-count"),
+          indicator: rectangle(el.querySelector(".ios-segmented-indicator")), button: selected >= 0 ? rectangle(buttons[selected]) : null };
+      });
+      (result.segmented ??= []).push({ label, ...geometry });
+      assert.equal(geometry.count, count, `${label}: expected option count`);
+      assert.equal(geometry.declaredCount, String(count), `${label}: shared control uses the actual option count`);
+      assert.equal(geometry.selected, index, `${label}: the requested option is selected`);
+      for (const property of ["x", "y", "width", "height"]) assert(Math.abs(geometry.indicator[property] - geometry.button[property]) < 1.1,
+        `${label}: slider and selected button align in ${property}`);
+    };
     const returnFromOverlay = async () => {
       if (test.android) await page.evaluate(() => window.__IOS_UI_FIXTURE__.hardwareBack());
       else assert.equal(await page.evaluate(async () => (await import("/src/back.ts")).runBack()), true, "Overlay consumes the shared back handler");
@@ -120,6 +141,26 @@ try {
       }
       await nav.getByRole("button", { name: "搜索", exact: true }).click();
 
+      const hotSearch = page.getByRole("region", { name: "热搜榜", exact: true });
+      await hotSearch.getByRole("button", { name: "播放 城市与晚风", exact: true }).waitFor();
+      assert.equal(await hotSearch.locator("ol > li").count(), titles.length, "Hot searches retain upstream rank order");
+      assert.equal(await hotSearch.locator("ol > li").first().innerText(), "01\n城市与晚风\n550.1w播放量");
+      await hotSearch.getByRole("button", { name: "播放 城市与晚风", exact: true }).click();
+      const playbackPositionSelector = test.mobile ? ".feed-position-pill" : ".desktop-context-header small";
+      await page.waitForFunction(selector => [...document.querySelectorAll(selector)].some(el => {
+        const bounds = el.getBoundingClientRect();
+        return el.textContent.trim() === "1 / 6" && bounds.width > 0 && bounds.top >= 0 && bounds.bottom <= innerHeight
+          && getComputedStyle(el).visibility !== "hidden" && !el.closest("[inert], [aria-hidden=true]");
+      }), playbackPositionSelector);
+      const activePlaybackPositions = await page.locator(playbackPositionSelector).evaluateAll(elements => elements.filter(el => {
+        const bounds = el.getBoundingClientRect();
+        return bounds.width > 0 && bounds.top >= 0 && bounds.bottom <= innerHeight
+          && getComputedStyle(el).visibility !== "hidden" && !el.closest("[inert], [aria-hidden=true]");
+      }).map(el => el.textContent.trim()));
+      assert.deepEqual(activePlaybackPositions, ["1 / 6"], "Only the viewport's active playback surface shows its position counter");
+      await page.keyboard.press("Escape");
+      check("official hot video titles, play counts, rank order, and direct playback");
+
       const query = page.getByRole("textbox", { name: "搜索短剧、帖子、题材…" });
       await query.fill("都市"); await query.press("Enter");
       await page.getByRole("button", { name: titles[0], exact: true }).waitFor();
@@ -147,9 +188,31 @@ try {
         check("Android player counter clears the mute control");
       }
 
+      const searchPage = page.locator(".ios-page").filter({ has: query });
+      await searchPage.getByRole("button", { name: "排行榜", exact: true }).click();
+      const rankSegment = page.getByRole("group", { name: "榜单类型", exact: true });
+      for (const [index, label] of ["热播榜", "推荐榜", "潜力榜"].entries()) {
+        await rankSegment.getByRole("button", { name: label, exact: true }).click();
+        await assertSlider(rankSegment, 3, index, `rank:${label}`);
+        await page.locator(".ios-rank-row").first().waitFor();
+        assert.equal(await page.locator(".ios-rank-row").count(), titles.length, `${label} shows all ranked fixture videos`);
+      }
+      await shot("ranks");
+      await page.keyboard.press("Escape");
+      await query.waitFor();
+      check("all three rank choices move the shared indicator into the selected button bounds");
+
       await nav.getByRole("button", { name: "分类", exact: true }).click();
       await page.getByRole("button").filter({ has: page.getByText("专题", { exact: true }) }).click();
       const topic = page.getByRole("button").filter({ has: page.getByText("本周精选", { exact: true }) });
+      await topic.waitFor();
+      const topicShape = await topic.evaluate(el => {
+        const style = getComputedStyle(el), bounds = el.getBoundingClientRect();
+        return { radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius], width: bounds.width, height: bounds.height };
+      });
+      result.topicShape = topicShape;
+      assert.deepEqual(topicShape.radii, ["16px", "16px", "16px", "16px"], "Topic cards keep four 16px corners");
+      assert(topicShape.width > 32 && topicShape.height > 32, "A topic card retains a rectangular surface rather than becoming circular");
       await topic.click();
       await page.getByRole("button", { name: titles[0], exact: true }).waitFor();
       assert.equal(await topic.count(), 0, "Covered topic-list controls are removed from the accessibility tree");
@@ -164,15 +227,58 @@ try {
       await nav.getByRole("button", { name: "我的", exact: true }).click();
       await page.getByRole("button", { name: titles[0], exact: true }).waitFor();
       assert.equal(await page.getByRole("button", { name: titlePattern }).count(), titles.length);
+      await page.getByRole("button", { name: /未登录/ }).click();
+      const profileLogin = page.getByRole("dialog", { name: "登录 HGhubX", exact: true });
+      await profileLogin.getByLabel("账号", { exact: true }).fill("profile-fixture");
+      await profileLogin.getByLabel("密码", { exact: true }).fill("test-password");
+      await profileLogin.getByRole("button", { name: "登录", exact: true }).last().click();
+      const profileLinks = page.locator(".ios-profile-links");
+      await profileLinks.getByRole("button", { name: /^我的关注/ }).waitFor();
+      await profileLinks.getByRole("button", { name: /^我的主页/ }).waitFor();
+      await profileLogin.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: titles[0], exact: true }).locator(".ios-score-badge").waitFor();
+      assert.equal(await page.getByRole("button", { name: titles[0], exact: true }).locator(".ios-score-badge").innerText(), "8.5");
+      assert.equal(await page.getByRole("button", { name: titles[1], exact: true }).locator(".ios-score-badge").count(), 0, "Unrated videos do not show an empty score badge");
       result.posterWidth = Math.round(await page.getByRole("button", { name: titles[0], exact: true }).evaluate(el => el.getBoundingClientRect().width));
       await shot("favorites");
-      await page.getByRole("button", { name: "观看历史", exact: true }).click();
+      const profileSegment = page.getByRole("group", { name: "我的内容", exact: true });
+      await assertSlider(profileSegment, 2, 0, "profile:我的收藏");
+      const linkGeometry = () => profileLinks.evaluate(el => {
+        const parent = el.getBoundingClientRect();
+        return { x: parent.x, width: parent.width, height: parent.height, columns: [...el.children].map(child => {
+          const bounds = child.getBoundingClientRect();
+          return { left: bounds.x - parent.x, top: bounds.y - parent.y, width: bounds.width, height: bounds.height };
+        }) };
+      });
+      const linksBefore = await linkGeometry();
+      assert.equal(linksBefore.columns.length, 2, "Logged-in profile shows both shortcuts");
+      const [followingColumn, homepageColumn] = linksBefore.columns;
+      assert(followingColumn.width > 0 && Math.abs(followingColumn.width - homepageColumn.width) < 1
+        && Math.abs(followingColumn.top - homepageColumn.top) < 1 && homepageColumn.left >= followingColumn.left + followingColumn.width,
+      "Following and homepage shortcuts form two equal, adjacent columns");
+      const assertStableLinks = async label => {
+        const after = await linkGeometry();
+        for (const property of ["x", "width", "height"]) assert(Math.abs(after[property] - linksBefore[property]) < 1, `${label}: shortcut group keeps its ${property}`);
+        for (const [index, column] of after.columns.entries()) for (const property of ["left", "top", "width", "height"])
+          assert(Math.abs(column[property] - linksBefore.columns[index][property]) < 1, `${label}: shortcut ${index + 1} keeps its ${property}`);
+        return after;
+      };
+      await profileSegment.getByRole("button", { name: "观看历史", exact: true }).click();
+      await assertSlider(profileSegment, 2, 1, "profile:观看历史");
       await page.getByText("第 3 集 · 0:55", { exact: true }).waitFor();
       assert.equal(await page.getByRole("button", { name: titlePattern }).count(), 1);
-      check("local favorites and preserved playback progress");
+      const linksHistory = await assertStableLinks("History switch");
+      await profileSegment.getByRole("button", { name: "我的收藏", exact: true }).click();
+      await assertSlider(profileSegment, 2, 0, "profile:我的收藏 restored");
+      await page.getByRole("button", { name: titles[1], exact: true }).waitFor();
+      const linksRestored = await assertStableLinks("Collection switch");
+      result.profileLinks = { before: linksBefore, history: linksHistory, restored: linksRestored };
+      await page.getByRole("button", { name: "退出登录", exact: true }).click();
+      await page.getByRole("button", { name: /未登录/ }).waitFor();
+      check("local favorites, score badges, preserved playback progress, two-way slider, and stable profile shortcut columns");
 
-      const login = page.getByRole("button").filter({ has: page.getByText("未登录", { exact: true }) });
-      await login.click();
+      const accountButton = page.getByRole("button", { name: /未登录/ });
+      await accountButton.click();
       const dialog = page.getByRole("dialog", { name: "登录 HGhubX", exact: true });
       await dialog.waitFor();
       const username = dialog.getByLabel("账号", { exact: true });
@@ -194,14 +300,15 @@ try {
       await shot("login");
       await page.keyboard.press("Escape");
       await dialog.waitFor({ state: "hidden" });
-      await page.waitForFunction(el => el === document.activeElement, await login.elementHandle());
-      await login.click(); await dialog.waitFor();
+      await page.waitForFunction(el => el === document.activeElement, await accountButton.elementHandle());
+      await accountButton.click(); await dialog.waitFor();
       await returnFromOverlay(); await dialog.waitFor({ state: "hidden" });
-      await login.waitFor();
+      await accountButton.waitFor();
       check("visible form labels, login errors, focus trap, Escape, and overlay back");
 
       await page.getByRole("button", { name: "设置", exact: true }).click();
       const security = page.getByRole("switch", { name: "严格安全模式", exact: true });
+      const appearance = page.getByRole("group", { name: "外观模式", exact: true });
       await security.waitFor();
       await page.locator(".ios-setting-group").first().waitFor();
       await page.waitForTimeout(550);
@@ -221,6 +328,7 @@ try {
       assert.equal(controlRadii.settingIcon, "50%", "Setting symbols render on circular backplates");
       assert.equal(controlRadii.segmented, "999px", "Segmented controls use rounded outer corners");
       assert.equal(controlRadii.indicator, "999px", "Selected segment uses matching rounded corners");
+      await assertSlider(appearance, 3, test.theme === "dark" ? 2 : 1, "appearance:initial");
       check("circular icon controls and rounded segmented controls");
       const pageIn = page.locator(".a-page-in");
       if (await pageIn.count()) {
@@ -306,7 +414,6 @@ try {
       });
       const strictState = await security.getAttribute("aria-checked") === "true";
       assert.equal(switchTravel.left, strictState ? (test.android ? 25 : 27) : (test.android ? 0 : 3), "Security switch thumb matches its state");
-      const appearance = page.getByRole("group", { name: "外观模式", exact: true });
       const androidShell = page.locator(".plat-android").first();
       const material = await page.locator(".ios-setting-group").first().evaluate(el => {
         const root = getComputedStyle(document.documentElement);
@@ -341,6 +448,7 @@ try {
         assert.match(material.surface, /\/\s*\.8[0-9]/, "Light glass remains dense enough to separate from media");
       }
       await appearance.getByRole("button", { name: test.theme === "dark" ? "浅色" : "深色", exact: true }).click();
+      await assertSlider(appearance, 3, test.theme === "dark" ? 1 : 2, "appearance:opposite");
       const oppositeTheme = test.theme === "dark" ? "light" : "dark";
       await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, oppositeTheme);
       const beforeThemeBounds = test.android ? await androidShell.boundingBox() : null;
@@ -353,7 +461,9 @@ try {
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Theme change does not cause horizontal layout overflow");
       await appearance.getByRole("button", { name: "深色", exact: true }).click();
       await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+      await assertSlider(appearance, 3, 2, "appearance:深色");
       await appearance.getByRole("button", { name: "跟随", exact: true }).click();
+      await assertSlider(appearance, 3, 0, "appearance:跟随");
       await page.emulateMedia({ colorScheme: "light" });
       await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
       await page.emulateMedia({ colorScheme: "dark" });

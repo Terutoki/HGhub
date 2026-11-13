@@ -1,16 +1,23 @@
 import { fmt } from "../api";
 import type { VideoCard } from "../types";
-import { IHeartF, IPlayF } from "../icons";
+import { IHeartF, IPlayF, IStarF } from "../icons";
 import { Img } from "./ui";
 import { Button } from "./ios/controls";
 
-export function MediaCard({ title, cover, subtitle, badge, progress, priority = false, onOpen }: {
-  title: string; cover: string; subtitle?: string; badge?: string; progress?: string; priority?: boolean; onOpen: () => void;
+function ScoreBadge({ score }: { score: number }) {
+  return Number.isFinite(score) && score > 0 ? <span className="ios-score-badge" aria-label={`评分 ${score.toFixed(1)}`}>
+    <IStarF size={12} />{score.toFixed(1)}
+  </span> : null;
+}
+
+export function MediaCard({ title, cover, subtitle, badge, progress, score, priority = false, onOpen }: {
+  title: string; cover: string; subtitle?: string; badge?: string; progress?: string; score?: number; priority?: boolean; onOpen: () => void;
 }) {
   return <Button onClick={onOpen} className="ios-poster" aria-label={title}>
-    <span className="ios-poster-art">
+    <span className={`ios-poster-art ${badge ? "has-poster-badge" : ""}`}>
       <Img src={cover} alt="" eager={priority} />
       {badge && <span className="ios-poster-badge">{badge}</span>}
+      {typeof score === "number" && <ScoreBadge score={score} />}
       {progress && <span className="ios-poster-progress"><IPlayF size={12} />{progress}</span>}
       <span className="ios-poster-play" aria-hidden="true"><IPlayF size={23} /></span>
     </span>
@@ -20,7 +27,7 @@ export function MediaCard({ title, cover, subtitle, badge, progress, priority = 
 }
 
 export function WaterfallCard({ v, onOpen, priority = false }: { v: VideoCard; onOpen: () => void; priority?: boolean }) {
-  return <MediaCard title={v.title} cover={v.cover} onOpen={onOpen} priority={priority}
+  return <MediaCard title={v.title} cover={v.cover} onOpen={onOpen} priority={priority} score={v.score}
     badge={v.is_finished ? "已完结" : `更新至 ${v.episode_count} 集`}
     subtitle={v.tags?.slice(0, 2).join(" · ") || v.author?.name || "HGhubX"}
     progress={`${fmt(v.hot)} 次播放`} />;
@@ -35,7 +42,7 @@ export function Masonry({ videos, onOpen, wide = false }: {
 }
 
 export function RowCard({ v, onOpen }: { v: VideoCard; onOpen: () => void }) {
-  return <div className="ios-row-card"><MediaCard title={v.title} cover={v.cover} onOpen={onOpen}
+  return <div className="ios-row-card"><MediaCard title={v.title} cover={v.cover} score={v.score} onOpen={onOpen}
     badge={v.is_finished ? "完结" : `${v.episode_count} 集`}
     subtitle={v.score ? `${v.score.toFixed(1)} 分 · ${v.tags?.[0] || "短剧"}` : v.tags?.slice(0, 2).join(" · ")} />
   </div>;
@@ -47,7 +54,7 @@ export function RankRow({ item, onOpen, metricMax }: {
 }) {
   return <Button className="ios-rank-row" onClick={onOpen}>
     <span className={`ios-rank-number ${item.rank < 4 ? "is-top" : ""}`}>{String(item.rank).padStart(2, "0")}</span>
-    <span className="ios-rank-cover"><Img src={item.cover} /></span>
+    <span className="ios-rank-cover"><Img src={item.cover} />{typeof item.score === "number" && <ScoreBadge score={item.score} />}</span>
     <span className="ios-rank-copy"><strong>{item.title}</strong><span>{item.tags?.slice(0, 2).join(" · ")}</span>
       <span className="ios-rank-meter" aria-hidden="true"><span style={{ width: `${Math.max(6, item.metric_value / Math.max(1, metricMax) * 100)}%` }} /></span>
     </span>

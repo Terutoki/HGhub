@@ -694,10 +694,10 @@ pub async fn api_search(
         .await
 }
 
-/// 热搜榜：`/api/search/hot` 返回 data.items（word/heat）。
+/// 热搜榜：解析官网搜索页服务端渲染的热搜影片列表。
 #[tauri::command]
-pub async fn api_search_hot(state: State<'_, Api>) -> Result<Value, String> {
-    state.get("/api/search/hot").await
+pub async fn api_search_hot(_state: State<'_, Api>) -> Result<Value, String> {
+    crate::search_hot::fetch().await
 }
 
 #[tauri::command]
