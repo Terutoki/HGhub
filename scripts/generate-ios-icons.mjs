@@ -67,8 +67,10 @@ if (/\brx\s*=|\bstroke\s*=/.test(sourceSvg.split("<g", 1)[0])) {
 
 const temp = mkdtempSync(join(tmpdir(), "hghubx-ios-icons-"));
 try {
-  const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-  execFileSync(pnpm, ["tauri", "icon", "--output", temp, source], { cwd: root, stdio: "inherit" });
+  // Invoke the installed Tauri CLI through the current Node process. Spawning
+  // A package-manager wrapper from a Tauri beforeBuildCommand returns EINVAL on Windows runners.
+  const tauriCli = join(root, "node_modules", "@tauri-apps", "cli", "tauri.js");
+  execFileSync(process.execPath, [tauriCli, "icon", "--output", temp, source], { cwd: root, stdio: "inherit" });
   const generated = join(temp, "ios");
   const generatedNames = readdirSync(generated).filter(name => name.endsWith(".png")).sort();
   const expectedNames = slots.map(slot => slot.filename).sort();
