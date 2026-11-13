@@ -110,7 +110,7 @@ html.theme-light input[type="range"].hg-range::-webkit-slider-thumb {
 @keyframes kf-page-out { from{transform:translateX(0)} to{transform:translateX(100%)} }
 .a-page-out { animation: kf-page-out .22s cubic-bezier(.3,0,.8,.15) both; }
 @keyframes kf-shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
-.shimmer { background: linear-gradient(90deg, var(--p-s1) 25%, var(--p-s3) 50%, var(--p-s1) 75%); background-size: 800px 100%; animation: kf-shimmer 1.4s linear infinite; }
+.shimmer { background: linear-gradient(110deg, var(--p-s1) 0%, var(--p-s3) 50%, var(--p-s1) 100%); }
 @keyframes kf-spin { to{transform:rotate(360deg)} }
 .a-spin-slow { animation: kf-spin 6s linear infinite; }
 @keyframes kf-toast { from{opacity:0;transform:translateY(12px) scale(.96)} to{opacity:1;transform:translateY(0) scale(1)} }

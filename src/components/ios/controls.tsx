@@ -39,6 +39,6 @@ export const Form = forwardRef<HTMLFormElement, FormHTMLAttributes<HTMLFormEleme
   </form>;
 });
 
-export const Image = forwardRef<HTMLImageElement, ImgHTMLAttributes<HTMLImageElement>>(function Image({ alt = "", decoding = "async", ...props }, ref) {
-  return <img {...props} ref={ref} alt={alt} decoding={decoding} data-ui="image" />;
+export const Image = forwardRef<HTMLImageElement, ImgHTMLAttributes<HTMLImageElement>>(function Image({ alt = "", decoding = "async", loading = "lazy", ...props }, ref) {
+  return <img {...props} ref={ref} alt={alt} decoding={decoding} loading={loading} fetchPriority={loading === "eager" ? "high" : "auto"} data-ui="image" />;
 });

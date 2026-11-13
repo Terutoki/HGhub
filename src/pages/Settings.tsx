@@ -18,7 +18,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 /* 独立设置页：线路 / 外观 / 播放 / 本地数据 / 清理缓存 / 网络诊断 / 关于
    入口：Windows 侧栏「设置」、Android「我的」右上角齿轮 */
 export default function Settings({ onBack, wide }: { onBack: () => void; wide: boolean }) {
-  const { theme, setTheme, favs, history, muteOnStartup, setMuteOnStartup, preferHevc, setPreferHevc, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast } = useStore();
+  const { theme, themePreference, setTheme, favs, history, muteOnStartup, setMuteOnStartup, preferHevc, setPreferHevc, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast } = useStore();
   const [about, setAbout] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -76,13 +76,20 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
       <div className="ios-page-body flex-1 scroll-y px-4 pt-1 pb-10">
         <div className={wide ? "max-w-[720px] mx-auto" : ""}>
           <Section title="外观">
-            <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary">{theme === "dark" ? <IMoon size={16} /> : <ISun size={16} />}</span>
+            <div className="ios-appearance-row flex items-center gap-3 px-3.5 py-3">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary">{themePreference === "system" ? <IRefresh size={16} /> : theme === "dark" ? <IMoon size={16} /> : <ISun size={16} />}</span>
               <div className="flex-1">
-                <div className="text-[14px] text-on">深色外观</div>
-                <div className="text-[12px] text-mut">深色适合夜间观看，关闭后使用浅色外观</div>
+                <div className="text-[14px] text-on">外观</div>
+                <div className="text-[12px] text-mut">{themePreference === "system" ? `跟随系统（当前${theme === "dark" ? "深色" : "浅色"}）` : theme === "dark" ? "深色外观" : "浅色外观"}</div>
               </div>
-              <Toggle on={theme === "dark"} onChange={(on) => setTheme(on ? "dark" : "light")} label="深色外观" />
+              <div className="ios-segmented ios-appearance-picker" role="group" aria-label="外观模式">
+                {([['system', '跟随'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => (
+                  <Button key={value} type="button" aria-pressed={themePreference === value}
+                    onClick={() => setTheme(value)} className="min-h-9 px-2.5 text-[12px] font-semibold">
+                    {label}
+                  </Button>
+                ))}
+              </div>
             </div>
           </Section>
 

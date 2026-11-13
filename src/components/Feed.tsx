@@ -922,13 +922,18 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                     <small>{index + 1} / {videoIds.length}</small>
                   </div>
                 ) : (
-                  <div className="absolute inset-x-0 z-20 flex items-center gap-2 px-2.5" style={{ top: "calc(var(--sat, 0px) + 8px)", paddingRight: 148 }}>
+                  <div className="absolute inset-x-0 z-20 flex items-center gap-2 px-2.5" style={{ top: "calc(var(--sat, 0px) + 8px)", paddingRight: 132 }}>
                     <Button onClick={onBack} aria-label="返回" className="hg-chip w-9 h-9 rounded-full flex items-center justify-center pressable elev-1"><IBack size={20} /></Button>
                     <span className="text-[15px] font-semibold hg-ink hg-ov-shadow truncate">{title}</span>
-                    <span className="ml-auto px-2 py-0.5 rounded-full hg-chip text-[12px] font-semibold" style={{ color: "rgba(255,255,255,.9)" }}>{index + 1} / {videoIds.length}</span>
                   </div>
                 )
               ) : null}
+              {!fs && !clean && !isDesktop && mode === "context" && (
+                <span className="feed-position-pill absolute z-20 px-2.5 py-1 rounded-full hg-chip text-[12px] font-semibold tabular-nums"
+                  style={{ top: "calc(var(--sat, 0px) + 52px)", left: 12, color: "rgba(255,255,255,.94)" }}>
+                  {index + 1} / {videoIds.length}
+                </span>
+              )}
 
               {/* 竖屏下的快捷操作（#19）：
                   横版视频 → 保持原样，居中横排一条（画面上下有黑边，居中不压主体）；

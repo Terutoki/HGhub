@@ -105,7 +105,28 @@ try {
       await query.fill("都市"); await query.press("Enter");
       await page.getByRole("button", { name: titles[0], exact: true }).waitFor();
       assert.equal(await page.getByRole("button", { name: titlePattern }).count(), titles.length);
-      await shot("search"); check("search results and responsive poster grid");
+      assert.equal(await page.getByRole("button", { name: titles[0], exact: true }).locator("img").getAttribute("loading"), "eager");
+      assert.equal(await page.getByRole("button", { name: titles[0], exact: true }).locator("img").getAttribute("fetchpriority"), "high");
+      assert.equal(await page.getByRole("button", { name: titles[2], exact: true }).locator("img").getAttribute("loading"), "lazy");
+      await shot("search"); check("search results and responsive poster grid"); check("first-screen covers load eagerly at high priority; remaining covers stay lazy");
+      if (test.android) {
+        await page.getByRole("button", { name: titles[0], exact: true }).click();
+        const position = page.locator(".feed-position-pill").first();
+        await position.waitFor();
+        const topControls = await position.evaluate(el => {
+          const counter = el.getBoundingClientRect();
+          const mute = document.querySelector('[aria-label="静音"], [aria-label="取消静音"]')?.getBoundingClientRect();
+          return { counter: { left: counter.left, right: counter.right, top: counter.top, bottom: counter.bottom },
+            mute: mute ? { left: mute.left, right: mute.right, top: mute.top, bottom: mute.bottom } : null };
+        });
+        assert(topControls.mute, "Playback mute control is visible");
+        assert.equal(topControls.counter.left < topControls.mute.right && topControls.counter.right > topControls.mute.left
+          && topControls.counter.top < topControls.mute.bottom && topControls.counter.bottom > topControls.mute.top, false,
+        "Playback position and mute control do not overlap");
+        await page.keyboard.press("Escape");
+        await nav.getByRole("button", { name: "搜索", exact: true }).waitFor();
+        check("Android player counter clears the mute control");
+      }
 
       await nav.getByRole("button", { name: "分类", exact: true }).click();
       await page.getByRole("button").filter({ has: page.getByText("专题", { exact: true }) }).click();
@@ -191,11 +212,59 @@ try {
       }
       await security.click();
       await page.waitForFunction(() => document.querySelector('[role=switch][aria-label="严格安全模式"]')?.getAttribute("aria-checked") === "false");
-      const appearance = page.getByRole("switch", { name: "深色外观", exact: true });
-      await appearance.click();
-      await page.waitForFunction(theme => document.documentElement.dataset.theme !== theme, test.theme);
-      await appearance.click();
+      const appearance = page.getByRole("group", { name: "外观模式", exact: true });
+      const androidShell = page.locator(".plat-android").first();
+      const material = await page.locator(".ios-setting-group").first().evaluate(el => {
+        const root = getComputedStyle(document.documentElement);
+        const group = getComputedStyle(el);
+        return {
+          blur: group.backdropFilter || group.webkitBackdropFilter,
+          surface: root.getPropertyValue("--glass-card-bg").trim(),
+          background: root.getPropertyValue("--p-bg").trim(),
+          text: root.getPropertyValue("--p-on").trim(),
+          muted: root.getPropertyValue("--p-mut").trim(),
+        };
+      });
+      assert.match(material.blur, new RegExp(`blur\\(${test.theme === "light" ? 28 : 22}px\\)`), "Glass panels use the theme-specific blur");
+      if (test.theme === "light") {
+        const contrast = (foreground, background) => {
+          const rgb = color => {
+            const hex = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color);
+            const channels = hex
+              ? (hex[1].length === 3 ? [...hex[1]].map(channel => Number.parseInt(channel + channel, 16))
+                : hex[1].match(/../g).map(channel => Number.parseInt(channel, 16)))
+              : color.match(/[\d.]+/g).slice(0, 3).map(Number);
+            return channels.map(channel => channel / 255 <= 0.04045
+              ? channel / 255 / 12.92 : ((channel / 255 + 0.055) / 1.055) ** 2.4);
+          };
+          const luminance = color => rgb(color).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+          const a = luminance(foreground);
+          const b = luminance(background);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        };
+        assert(contrast(material.text, material.background) >= 4.5, "Light primary text meets WCAG AA contrast");
+        assert(contrast(material.muted, material.background) >= 4.5, "Light secondary text meets WCAG AA contrast");
+        assert.match(material.surface, /\/\s*\.8[0-9]/, "Light glass remains dense enough to separate from media");
+      }
+      await appearance.getByRole("button", { name: test.theme === "dark" ? "浅色" : "深色", exact: true }).click();
+      const oppositeTheme = test.theme === "dark" ? "light" : "dark";
+      await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, oppositeTheme);
+      const beforeThemeBounds = test.android ? await androidShell.boundingBox() : null;
+      await appearance.getByRole("button", { name: test.theme === "dark" ? "深色" : "浅色", exact: true }).click();
       await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, test.theme);
+      if (!test.reduced) assert(await page.locator("html").evaluate(el => el.classList.contains("theme-transitioning")), "Theme swap starts its transition wash");
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const lightBounds = test.android ? await androidShell.boundingBox() : null;
+      if (test.android) assert.deepEqual(lightBounds, beforeThemeBounds, "Android page geometry stays stable during theme change");
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Theme change does not cause horizontal layout overflow");
+      await appearance.getByRole("button", { name: "深色", exact: true }).click();
+      await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+      await appearance.getByRole("button", { name: "跟随", exact: true }).click();
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+      await appearance.getByRole("button", { name: "浅色", exact: true }).scrollIntoViewIfNeeded();
       await appearance.scrollIntoViewIfNeeded();
       await shot("settings");
       const clearCache = page.getByRole("button").filter({ has: page.getByText("清理缓存", { exact: true }) });
@@ -206,7 +275,7 @@ try {
       await confirmation.waitFor({ state: "hidden" });
       await security.waitFor();
       await page.waitForFunction(el => el === document.activeElement, await clearCache.elementHandle());
-      check("settings state, 44px switches, live appearance change, and modal back priority");
+      check("settings state, 44px switches, adaptive appearance, theme motion and stable Android geometry");
       result.passed = true;
       console.log(`PASS ${name}`);
     } catch (error) {
