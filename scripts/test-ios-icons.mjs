@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,11 +17,26 @@ try {
   const script = join(root, "scripts", "sync-ios-icons.mjs");
   assert(existsSync(script), "iOS icon sync missing; generated projects keep Tauri template icons");
   const config = JSON.parse(readFileSync(join(root, "src-tauri", "tauri.conf.json"), "utf8"));
+  assert(config.build.beforeBuildCommand.includes("node scripts/generate-ios-icons.mjs"), "Normal Tauri builds must generate square iOS artwork");
   assert(config.build.beforeBuildCommand.includes("node scripts/sync-ios-icons.mjs"), "Normal Tauri builds must sync iOS icons");
+  const sourceSvg = readFileSync(join(root, "src-tauri", "icons", "ios", "source.svg"), "utf8");
+  assert(!/<rect[^>]*\brx\s*=|<rect[^>]*\bstroke\s*=/.test(sourceSvg), "iOS source must not pre-mask its full-bleed background");
+  assert(readdirSync(join(root, "src-tauri", "icons", "ios")).includes("source.svg"), "Tracked iOS source is missing");
   const build = readFileSync(join(root, "scripts", "build-ios-unsigned.sh"), "utf8");
+  const generateIndex = build.indexOf("node scripts/generate-ios-icons.mjs");
   const syncIndex = build.indexOf("node scripts/sync-ios-icons.mjs --required");
+  assert(generateIndex >= 0 && generateIndex < build.indexOf("pnpm tauri ios build"), "Unsigned builds must generate artwork before starting Tauri/Xcode");
   assert(syncIndex >= 0 && syncIndex < build.indexOf("pnpm tauri ios build"), "Unsigned builds must sync before starting Tauri/Xcode");
   console.log("PASS: standard and unsigned build hooks");
+
+  for (const slot of manifest.images) {
+    const [width, height] = slot.size.split("x").map(value => Number(value) * Number(slot.scale[0]));
+    const image = readFileSync(join(root, "src-tauri", "icons", "ios", slot.filename));
+    assert(image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), `${slot.filename} is not PNG`);
+    assert.equal(image.readUInt32BE(16), width, `${slot.filename} width`);
+    assert.equal(image.readUInt32BE(20), height, `${slot.filename} height`);
+  }
+  console.log("PASS: tracked iOS artwork has all 18 expected dimensions");
 
   mkdirSync(join(temp, "scripts"), { recursive: true });
   cpSync(script, join(temp, "scripts", "sync-ios-icons.mjs"));

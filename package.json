@@ -13,6 +13,7 @@
     "test:channel-pagination": "node scripts/test-channel-pagination.mjs",
     "test:mobile-layout": "node scripts/test-mobile-layout.mjs",
     "test:ios-ui": "node scripts/test-ios-ui.mjs",
+    "test:ios-icons": "node scripts/test-ios-icons.mjs",
     "test:ui-performance": "node scripts/test-ui-performance.mjs",
     "test:ios-overlays": "node scripts/test-ios-overlays.mjs",
     "test:diagnostic-copy": "node scripts/test-diagnostic-copy.mjs",
@@ -24,6 +25,7 @@
     "app:build": "tauri build",
     "android:init": "tauri android init",
     "android:icons": "node scripts/sync-android-icons.mjs",
+    "ios:icons": "node scripts/generate-ios-icons.mjs",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build"
   },

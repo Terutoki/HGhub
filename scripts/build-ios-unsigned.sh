@@ -12,7 +12,9 @@ ADDR_FILE="$(node -p "require('os').tmpdir() + '/' + require('./src-tauri/tauri.
 mkdir -p artifacts
 rm -f "$ADDR_FILE"
 
-# init writes Tauri template icons; replace and verify them before either build starts.
+# init writes Tauri template icons; generate square opaque artwork and replace it
+# before either build starts. The later beforeBuildCommand repeats this idempotently.
+node scripts/generate-ios-icons.mjs
 node scripts/sync-ios-icons.mjs --required
 
 # Tauri 没有 ios --no-sign。让它的 release options server 一直活着，
