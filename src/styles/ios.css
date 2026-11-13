@@ -446,6 +446,16 @@ html.theme-light {
 .ios-collection-links { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; }
 .ios-collection-links>.ios-collection-link { min-width:0; min-height:78px; }
 .ios-collection-links .ios-collection-copy { min-width:0; overflow-wrap:anywhere; }
+/* Narrow category shortcuts give the subtitle a full row instead of squeezing
+   it between the icon and arrow. Large text can still reflow without clipping. */
+@container (max-width:559px) {
+  .ios-category-links>.ios-collection-link { display:grid; grid-template-columns:36px minmax(0,1fr) 14px; column-gap:8px; row-gap:8px; align-content:start; }
+  .ios-category-links .ios-collection-copy { display:contents; }
+  .ios-category-links .ios-collection-icon { grid-column:1; grid-row:1; }
+  .ios-category-links .ios-collection-title { grid-column:2; grid-row:1; min-width:0; }
+  .ios-category-links .ios-collection-chevron { grid-column:3; grid-row:1; }
+  .ios-category-links .ios-collection-subtitle { grid-column:1 / -1; grid-row:2; min-width:0; margin-top:0; line-height:1.5; overflow-wrap:anywhere; }
+}
 .ios-page-body { scrollbar-gutter:stable; }
 .ios-search-hot-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
 .ios-search-hot-item.ios-button { display:flex; align-items:center; gap:12px; width:100%; min-height:60px; padding:10px 12px; text-align:left; background:var(--p-s3); }

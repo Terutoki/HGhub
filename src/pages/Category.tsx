@@ -97,7 +97,7 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
         )}
 
         {/* 专题 + 标签入口 */}
-        <CollectionLinks className="mx-4 mb-5">
+        <CollectionLinks className="ios-category-links mx-4 mb-5">
           <CollectionLink icon={<IGrid size={18} />} title="专题" subtitle="精选专辑合集"
             onClick={() => push({ kind: "topics" })} />
           <CollectionLink icon={<IGlobe size={18} />} title="标签" subtitle="按题材找片"

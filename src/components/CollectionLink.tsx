@@ -13,12 +13,12 @@ type CollectionLinkProps = Omit<ComponentProps<typeof Button>, "children" | "tit
 export function CollectionLink({ icon, title, subtitle, className, ...props }: CollectionLinkProps) {
   return <Button {...props} aria-label={props["aria-label"] ?? title}
     className={cn("ios-collection-link flex w-full min-w-0 min-h-[78px] items-center gap-2.5 p-3 text-left pressable", className)}>
-    <span aria-hidden="true" className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0">{icon}</span>
+    <span aria-hidden="true" className="ios-collection-icon w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0">{icon}</span>
     <span className="ios-collection-copy flex-1 min-w-0 [overflow-wrap:anywhere]">
-      <span className="block text-[14px] font-semibold text-on">{title}</span>
-      {subtitle && <span className="block text-[12px] text-mut mt-0.5">{subtitle}</span>}
+      <span className="ios-collection-title block text-[14px] font-semibold text-on">{title}</span>
+      {subtitle && <span className="ios-collection-subtitle block text-[12px] text-mut mt-0.5">{subtitle}</span>}
     </span>
-    <IChevR aria-hidden="true" size={14} className="text-mut shrink-0" />
+    <IChevR aria-hidden="true" size={14} className="ios-collection-chevron text-mut shrink-0" />
   </Button>;
 }
 
