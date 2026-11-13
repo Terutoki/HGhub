@@ -927,10 +927,6 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                 </div>
               )}
 
-              {/* 只剩极薄一层：给白字垫底用，不再往下压成黑边 */}
-              <div className="absolute inset-0 pointer-events-none"
-                style={{ background: "linear-gradient(0deg, rgba(8,11,15,.3) 0, rgba(11,14,20,.06) 18%, transparent 36%)" }} />
-
               {/* 顶部 */}
               {!fs && !clean && mode === "context" ? (
                 isDesktop ? (
@@ -1130,7 +1126,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   不加任何压暗层——黑边彻底去掉，全靠文字阴影保读；
                   进度条轨道几乎不可见，只用白点标播放位置。 */}
               {!fs && !clean && !isDesktop && (
-                <div className={`absolute inset-x-0 z-20 ${mode === "home" ? "ios-home-caption" : ""}`} style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset}px)` }}>
+                <div className="absolute inset-x-0 z-20" style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset}px)` }}>
                   <div className="relative px-4 pb-2 flex items-center gap-2">
                     <p className="flex-1 min-w-0 text-[15px] font-semibold leading-snug hg-ink-2 hg-ov-shadow-strong clamp-2">{meta.title}</p>
                   </div>
@@ -1255,7 +1251,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
         </div>
       )}
 
-      {/* 移动端全屏模式下的进度条（普通模式的进度条在底部灰块里） */}
+      {/* 移动端全屏进度条，普通模式的进度条位于标题下方 */}
       {!isDesktop && fs && !idle && (
         <div
           className="absolute inset-x-0 z-30 px-4"

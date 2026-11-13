@@ -303,9 +303,12 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
 .desktop-controls {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 25;
   padding: 0 22px 10px; color: #bcc3cd;
-  background: linear-gradient(0deg, rgba(6,9,13,.82), rgba(6,9,13,.28) 62%, transparent);
+  background: transparent;
   transition: opacity .25s;
 }
+/* Keep controls legible without laying a dark panel over the video. */
+.desktop-controls, .player-inline-controls { text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.desktop-control-row svg, .player-inline-controls svg { filter: drop-shadow(0 1px 2px rgba(0,0,0,.75)); }
 .desktop-controls.is-hidden { opacity: 0; pointer-events: none; }
 .playback-unlock { color: rgba(255,255,255,.38); background: rgba(0,0,0,.12); transition: color .2s, background .2s; }
 .playback-unlock:hover, .playback-unlock:focus-visible { color: rgba(255,255,255,.9); background: rgba(0,0,0,.4); }

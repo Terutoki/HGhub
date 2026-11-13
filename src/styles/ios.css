@@ -491,9 +491,6 @@ html.theme-transitioning .ios-account-card { backdrop-filter:none; -webkit-backd
 .ios-mobile-nav[data-over-video=true] .ios-mobile-nav-item { color:#f2f0eb; font-size:12px; }
 .ios-mobile-nav[data-over-video=true] .ios-mobile-nav-item[aria-current=page] { color:var(--motion-on-ink); }
 .ios-mobile-nav[data-over-video=true] .hg-glass>.ios-mobile-nav-items>[aria-current=page] { color:var(--motion-on-ink); }
-.ios-home-caption { isolation:isolate; }
-.ios-home-caption::before { content:""; position:absolute; z-index:0; inset:-64px 0 -16px; pointer-events:none; background:linear-gradient(0deg,rgb(0 0 0 / .94),rgb(0 0 0 / .82) 52%,rgb(0 0 0 / .42) 78%,transparent); }
-.ios-home-caption>* { position:relative; z-index:1; }
 
 /* Keep accessibility fallbacks last so the glass layer cannot override them. */
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more) {

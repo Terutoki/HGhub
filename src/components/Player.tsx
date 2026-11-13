@@ -242,7 +242,7 @@ export default function Player({
       )}
 
       {controls && (
-        <div className="absolute inset-x-0 bottom-0 px-3 pb-2 pt-8 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="player-inline-controls absolute inset-x-0 bottom-0 px-3 pb-2 pt-8 opacity-0 group-hover:opacity-100 transition-opacity">
           <Input aria-label="播放进度" type="range" {...seek.inputProps}
             className="hg-range w-full" style={{ ...seek.inputProps.style, "--fill": `${pct}%` } as React.CSSProperties} />
           <div className="flex items-center gap-3 mt-1 text-white">
