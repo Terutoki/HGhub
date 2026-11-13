@@ -5,7 +5,7 @@ import { AppProvider, useStore } from "../src/store";
 function Probe() {
   const store = useStore();
   useEffect(() => {
-    Object.assign(window, { storageMigrationFixture: store });
+    Object.assign(window, { storageMigrationFixture: { ...store, getThemePreference: () => store.themePreference } });
   }, [store]);
   return <pre>{JSON.stringify({
     likes: store.likes, favs: store.favs, history: store.history, follows: store.follows,

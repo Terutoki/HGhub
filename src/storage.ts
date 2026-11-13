@@ -2,6 +2,7 @@ export const STORAGE_KEYS = {
   app: "hghubx_app_v1",
   swipeEp: "hghubx_swipe_ep_v2",
   theme: "hghubx_theme",
+  autoLine: "hghubx_auto_line",
 } as const;
 
 type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS];
@@ -11,6 +12,7 @@ const LEGACY_KEYS: Record<StorageKey, string> = {
   hghubx_app_v1: "hghub_app_v1",
   hghubx_swipe_ep_v2: "hghub_swipe_ep_v2",
   hghubx_theme: "hghub_theme",
+  hghubx_auto_line: "hg.autoLine",
 };
 
 /** 新键优先；确认旧数据已写入新键后才删除旧键。存储写入失败仍可读取旧数据。 */
