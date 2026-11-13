@@ -8,7 +8,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   children, className = "", type = "button", variant, disabled, ...props
 }, ref) {
   const intent = variant ?? (/(^|\s)(bg-primary|brand-grad)(\s|$)/.test(className) ? "primary" : "ghost");
-  const card = (props.style?.paddingTop !== undefined || props.style?.aspectRatio !== undefined) || /(?:ios-poster|ios-row-card|ios-rank-row)/.test(className);
+  const card = (props.style?.paddingTop !== undefined || props.style?.aspectRatio !== undefined) || /(?:ios-poster|ios-row-card|ios-rank-row|ios-account-card|ios-collection-link)/.test(className);
   return <button {...props} ref={ref} type={type} disabled={disabled}
     data-ui="button" data-variant={intent} data-card={card || undefined}
     className={cn("ios-button", `ios-button-${intent}`, className)}>
@@ -30,7 +30,10 @@ export const Surface = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
   </div>;
 });
 export function SegmentedControl({ children, className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div {...props} className={cn("ios-segmented", className)} role={props.role ?? "group"} aria-label={props["aria-label"] ?? "切换内容"}>{children}</div>;
+  return <div {...props} className={cn("ios-segmented", className)} role={props.role ?? "group"} aria-label={props["aria-label"] ?? "切换内容"}>
+    <span className="ios-segmented-indicator" aria-hidden="true" />
+    <span className="ios-segmented-items">{children}</span>
+  </div>;
 }
 
 export const Form = forwardRef<HTMLFormElement, FormHTMLAttributes<HTMLFormElement>>(function Form({ children, className, ...props }, ref) {

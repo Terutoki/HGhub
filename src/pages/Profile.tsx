@@ -39,7 +39,7 @@ export default function Profile({ wide }: { wide: boolean }) {
         <div className="ios-page-title text-on">我的</div>
         {isMobile && (
           <Button onClick={() => push({ kind: "settings" })} aria-label="设置"
-            className="ml-auto w-9 h-9 rounded-full bg-s3 flex items-center justify-center text-mut pressable">
+            className="ios-icon-button ml-auto">
             <ISettings size={17} strokeWidth={1.7} />
           </Button>
         )}
@@ -60,7 +60,7 @@ export default function Profile({ wide }: { wide: boolean }) {
               </div>
             </div>
             <Button onClick={async () => { await logout(); }}
-              className="w-9 h-9 rounded-full bg-s3 flex items-center justify-center text-mut pressable" aria-label="退出登录">
+              className="ios-icon-button" aria-label="退出登录">
               <ILogout size={17} />
             </Button>
           </Surface>
@@ -86,7 +86,7 @@ export default function Profile({ wide }: { wide: boolean }) {
         {user && (
           <div className="grid grid-cols-2 gap-2.5 mt-4">
             <Button onClick={() => push({ kind: "following" })}
-              className="flex items-center gap-2.5 rounded-(--r-md) bg-s2 p-3 text-left pressable elev-1">
+              className="ios-collection-link flex items-center gap-2.5 p-3 text-left pressable">
               <span className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><IHeart size={18} /></span>
               <span className="flex-1">
                 <span className="block text-[14px] font-semibold text-on">我的关注</span>
@@ -95,7 +95,7 @@ export default function Profile({ wide }: { wide: boolean }) {
               <IChevR size={14} className="text-mut" />
             </Button>
             <Button onClick={() => push({ kind: "user", id: user.id, name: user.nickname })}
-              className="flex items-center gap-2.5 rounded-(--r-md) bg-s2 p-3 text-left pressable elev-1">
+              className="ios-collection-link flex items-center gap-2.5 p-3 text-left pressable">
               <span className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><IUserF size={18} /></span>
               <span className="flex-1">
                 <span className="block text-[14px] font-semibold text-on">我的主页</span>
@@ -107,11 +107,9 @@ export default function Profile({ wide }: { wide: boolean }) {
         )}
 
         {/* 我的内容 */}
-        <SegmentedControl className="flex bg-s3 rounded-(--r-ctl) p-1 mt-4">
+        <SegmentedControl className="mt-4" aria-label="我的内容" data-active-index={tab === "fav" ? 0 : 1}>
           {([["fav", "我的收藏"], ["history", "观看历史"]] as const).map(([k, l]) => (
-            <Button aria-pressed={tab === k} key={k} onClick={() => setTab(k)}
-              className={`flex-1 h-8 rounded-(--r-ctl) text-[13px] font-semibold pressable ${tab === k ? "tonal text-on-sec" : "text-mut"}`}
-              style={tab === k ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{l}</Button>
+            <Button aria-pressed={tab === k} key={k} onClick={() => setTab(k)}>{l}</Button>
           ))}
         </SegmentedControl>
 

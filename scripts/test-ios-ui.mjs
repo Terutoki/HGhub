@@ -184,6 +184,23 @@ try {
       await page.getByRole("button", { name: "设置", exact: true }).click();
       const security = page.getByRole("switch", { name: "严格安全模式", exact: true });
       await security.waitFor();
+      const controlRadii = await page.evaluate(() => {
+        const icon = document.querySelector(".ios-page .ios-icon-button");
+        const settingIcon = document.querySelector(".ios-setting-icon");
+        const segmented = document.querySelector(".ios-appearance-picker");
+        const indicator = segmented?.querySelector(".ios-segmented-indicator");
+        return {
+          icon: icon && getComputedStyle(icon).borderRadius,
+          settingIcon: settingIcon && getComputedStyle(settingIcon).borderRadius,
+          segmented: segmented && getComputedStyle(segmented).borderRadius,
+          indicator: indicator && getComputedStyle(indicator).borderRadius,
+        };
+      });
+      assert.equal(controlRadii.icon, "50%", "Icon controls render as circles");
+      assert.equal(controlRadii.settingIcon, "50%", "Setting symbols render on circular backplates");
+      assert.equal(controlRadii.segmented, "999px", "Segmented controls use rounded outer corners");
+      assert.equal(controlRadii.indicator, "999px", "Selected segment uses matching rounded corners");
+      check("circular icon controls and rounded segmented controls");
       const pageIn = page.locator(".a-page-in");
       if (await pageIn.count()) {
         await pageIn.first().evaluate(async el => {
@@ -198,16 +215,34 @@ try {
         const visual = await item.evaluate(el => {
           const track = getComputedStyle(el.querySelector(".ios-switch-track"));
           const thumb = getComputedStyle(el.querySelector(".ios-switch-thumb"));
-          return { trackWidth: track.width, trackBorder: track.borderTopWidth, trackBackground: track.backgroundImage,
-            thumbBackground: thumb.backgroundImage };
+          const shell = el.closest(".plat-android");
+          const activeIndicator = document.querySelector(".ios-mobile-nav .hg-drop .ios-liquid-fill");
+          const activeTab = document.querySelector('.ios-mobile-nav-item[aria-current="page"]');
+          return { platform: el.dataset.platform, trackWidth: track.width, trackHeight: track.height,
+            trackRadius: track.borderRadius, trackBorder: track.borderTopWidth, trackBackground: track.backgroundImage,
+            thumbBackground: thumb.backgroundImage, thumbRadius: thumb.borderRadius,
+            activeIndicator: activeIndicator ? getComputedStyle(activeIndicator).backgroundColor : null,
+            activeTabColor: activeTab ? getComputedStyle(activeTab).color : null,
+            androidShell: !!shell };
         });
         result.switches.push({ label: await item.getAttribute("aria-label"), width: target.width, height: target.height, visualBounds: bounds, ...visual });
         assert(target.width >= 44 && target.height >= (test.android ? 48 : 44), "Switch touch target meets the platform minimum");
         assert(["true", "false"].includes(await item.getAttribute("aria-checked")), "Switch exposes its state");
         if (test.android) {
-          assert.equal(visual.trackWidth, "54px", "Android renders the wider glass switch track");
-          assert.notEqual(visual.trackBorder, "0px", "Android switch track has a visible glass edge");
-          assert.match(visual.thumbBackground, /linear-gradient/, "Android thumb uses the metallic finish");
+          assert.equal(visual.platform, "android", "Android selects its platform switch variant");
+          assert.equal(visual.trackWidth, "52px", "Android uses the compact Material switch track");
+          assert.equal(visual.trackHeight, "18px", "Android uses a slim track");
+          assert.equal(visual.trackRadius, "6px", "Android uses a square-edged track rather than the iOS capsule");
+          assert.equal(visual.trackBackground, "none", "Android track has a solid material fill");
+          assert.equal(visual.thumbRadius, "50%", "Android thumb is circular");
+          assert.equal(visual.thumbBackground, "none", "Android thumb uses a solid surface");
+          assert.equal(visual.androidShell, true, "Android fixture runs in the Android app shell");
+          assert.notEqual(visual.activeIndicator, "rgba(0, 0, 0, 0)", "Android active navigation has a visible selection surface");
+          assert.notEqual(visual.activeTabColor, "rgb(255, 255, 255)", "Android active navigation uses the selected ink color");
+        } else if (test.mobile) {
+          assert.equal(visual.platform, "ios", "iOS keeps its platform switch variant");
+          assert.equal(visual.trackRadius, "999px", "iOS keeps its capsule track");
+          assert.equal(visual.thumbRadius, "50%", "iOS keeps its circular thumb");
         }
       }
       await security.click();

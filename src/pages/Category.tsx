@@ -92,7 +92,7 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
         {/* 排行榜入口：只在移动端显示（底部导航没有排行榜，桌面侧栏已有） */}
         {!wide && (
           <Button onClick={() => push({ kind: "ranks" })}
-            className="mx-4 mb-2.5 w-[calc(100%-2rem)] flex items-center gap-3 rounded-(--r-md) bg-s2 p-3.5 text-left pressable elev-1">
+            className="ios-collection-link mx-4 mb-2.5 w-[calc(100%-2rem)] flex items-center gap-3 p-3.5 text-left pressable">
             <span className="w-10 h-10 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><ITrophy size={20} /></span>
             <span className="flex-1">
               <span className="block text-[15px] font-semibold text-on">排行榜</span>
@@ -105,7 +105,7 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
         {/* 专题 + 标签入口 */}
         <div className="mx-4 mb-5 grid grid-cols-2 gap-2.5">
           <Button onClick={() => push({ kind: "topics" })}
-            className="flex items-center gap-2.5 rounded-(--r-md) bg-s2 p-3 text-left pressable elev-1">
+            className="ios-collection-link flex items-center gap-2.5 p-3 text-left pressable">
             <span className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><IGrid size={18} /></span>
             <span className="flex-1">
               <span className="block text-[14px] font-semibold text-on">专题</span>
@@ -114,7 +114,7 @@ export default function Category({ wide, active }: { wide: boolean; active: bool
             <IChevR size={14} className="text-mut" />
           </Button>
           <Button onClick={() => push({ kind: "tags" })}
-            className="flex items-center gap-2.5 rounded-(--r-md) bg-s2 p-3 text-left pressable elev-1">
+            className="ios-collection-link flex items-center gap-2.5 p-3 text-left pressable">
             <span className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center shrink-0"><IGlobe size={18} /></span>
             <span className="flex-1">
               <span className="block text-[14px] font-semibold text-on">标签</span>
@@ -292,20 +292,18 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
           <Button onClick={() => setSearching(true)} aria-label={cate === "original" ? "搜索原创" : "搜索短剧"} className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></Button>
         </div>
         {cate === "original" && (
-          <div className="px-4 pb-2 flex gap-2">
+          <div className="px-4 pb-2 flex flex-wrap gap-2">
             {ORIGINAL_CATES.map((s) => (
               <Button aria-pressed={originalCate === s.value} key={s.value} onClick={() => changeOriginalCate(s.value)}
-                className={`px-4 h-8 rounded-(--r-ctl) text-[13px] font-semibold pressable ${originalCate === s.value ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
-                style={originalCate === s.value ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{s.label}</Button>
+                className="ios-filter-pill">{s.label}</Button>
             ))}
           </div>
         )}
         {cate !== "original" && (
-          <div className="px-4 pb-3 flex gap-2">
+          <div className="px-4 pb-3 flex flex-wrap gap-2">
             {CHANNEL_SORTS.map((s) => (
               <Button aria-pressed={serverSort === s.value} key={s.value} onClick={() => changeServerSort(s.value)}
-                className={`px-4 h-8 rounded-(--r-ctl) text-[13px] font-semibold pressable ${serverSort === s.value ? "tonal text-on-sec" : "bg-s3 text-mut"}`}
-                style={serverSort === s.value ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{s.label}</Button>
+                className="ios-filter-pill">{s.label}</Button>
             ))}
           </div>
         )}

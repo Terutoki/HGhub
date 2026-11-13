@@ -1,4 +1,4 @@
-import { Button, Surface, TextArea } from "../components/ios/controls";
+import { Button, SegmentedControl, Surface, TextArea } from "../components/ios/controls";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, APP_VERSION, hostOf, logLine, platform, type UpdateInfo } from "../api";
 import { useStore } from "../store";
@@ -76,26 +76,26 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
       <div className="ios-page-body flex-1 scroll-y px-4 pt-1 pb-10">
         <div className={wide ? "max-w-[720px] mx-auto" : ""}>
           <Section title="外观">
-            <div className="ios-appearance-row flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary">{themePreference === "system" ? <IRefresh size={16} /> : theme === "dark" ? <IMoon size={16} /> : <ISun size={16} />}</span>
+            <div className="ios-appearance-row items-center">
+              <span className="ios-setting-icon">{themePreference === "system" ? <IRefresh size={16} /> : theme === "dark" ? <IMoon size={16} /> : <ISun size={16} />}</span>
               <div className="flex-1">
                 <div className="text-[14px] text-on">外观</div>
                 <div className="text-[12px] text-mut">{themePreference === "system" ? `跟随系统（当前${theme === "dark" ? "深色" : "浅色"}）` : theme === "dark" ? "深色外观" : "浅色外观"}</div>
               </div>
-              <div className="ios-segmented ios-appearance-picker" role="group" aria-label="外观模式">
+              <SegmentedControl className="ios-appearance-picker" aria-label="外观模式" data-active-index={(["system", "light", "dark"] as const).indexOf(themePreference)}>
                 {([['system', '跟随'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => (
                   <Button key={value} type="button" aria-pressed={themePreference === value}
-                    onClick={() => setTheme(value)} className="min-h-9 px-2.5 text-[12px] font-semibold">
+                    onClick={() => setTheme(value)}>
                     {label}
                   </Button>
                 ))}
-              </div>
+              </SegmentedControl>
             </div>
           </Section>
 
           <Section title="播放">
             <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IVolMute size={16} /></span>
+              <span className="ios-setting-icon"><IVolMute size={16} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] text-on">启动时静音</div>
                 <div className="text-[12px] text-mut">默认开启，每次启动均静音；关闭后记住上次静音状态。下次启动生效。</div>
@@ -103,7 +103,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
               <Toggle on={muteOnStartup} onChange={setMuteOnStartup} label="启动时静音" />
             </div>
             <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IBoltF size={16} /></span>
+              <span className="ios-setting-icon"><IBoltF size={16} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] text-on">优先高清</div>
                 <div className="text-[12px] text-mut">有高清就用 HEVC，播不了会自动切回标准</div>
@@ -114,14 +114,14 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
 
           <Section title="本地数据">
             <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IHeart size={16} /></span>
+              <span className="ios-setting-icon"><IHeart size={16} /></span>
               <div className="flex-1">
                 <div className="text-[14px] text-on">本地片库</div>
                 <div className="text-[12px] text-mut">{favs.length} 部收藏 · {history.length} 条观看记录</div>
               </div>
             </div>
             <Button onClick={() => setClearOpen(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IBroom size={16} /></span>
+              <span className="ios-setting-icon"><IBroom size={16} /></span>
               <div className="flex-1">
                 <div className="text-[14px] text-on">清理缓存</div>
                 <div className="text-[12px] text-mut">封面 / 播放缓存与本地记录</div>
@@ -132,7 +132,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
 
           <Section title="网络">
             <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IBoltF size={16} /></span>
+              <span className="ios-setting-icon"><IBoltF size={16} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] text-on">播放源</div>
                 <div className="text-[12px] text-mut truncate">固定 huangguoai.com</div>
@@ -140,7 +140,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
               <span className="text-[12px] text-mint">已固定</span>
             </div>
             <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ILockF size={15} /></span>
+              <span className="ios-setting-icon"><ILockF size={15} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] text-on">严格安全模式</div>
                 <div className="text-[12px] text-mut">
@@ -191,7 +191,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
                 setDiagnosing(false);
               }
             }} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable disabled:opacity-60">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ILink size={16} /></span>
+              <span className="ios-setting-icon"><ILink size={16} /></span>
               <div className="flex-1">
                 <div className="text-[14px] text-on">{diagnosing ? "正在诊断…" : "网络诊断"}</div>
                 <div className="text-[12px] text-mut">DNS / TCP / 系统代理 / 官网连通性，一键复制带结论的报告</div>
@@ -202,7 +202,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
 
           <Section title="播放诊断">
             <div className="flex items-center gap-3 px-3.5 py-3">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IInfo size={16} /></span>
+              <span className="ios-setting-icon"><IInfo size={16} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] text-on">播放诊断日志</div>
                 <div className="text-[12px] text-mut">版本、平台、当前线路和播放失败原因始终记录；开关只额外记录拖动与缓冲细节</div>
@@ -217,7 +217,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
               catch (e) { toast((e as Error).message || "复制日志失败", "info"); }
               finally { setCopyingLog(false); }
             }} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable disabled:opacity-60">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ILink size={16} /></span>
+              <span className="ios-setting-icon"><ILink size={16} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] text-on">{copyingLog ? "正在复制…" : "复制播放诊断日志"}</div>
                 <div className="text-[12px] text-mut break-all">含版本、平台、当前线路、播放失败原因，粘贴即完整{playbackLog.path ? ` · ${playbackLog.path}` : ""}</div>
@@ -228,7 +228,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
 
           <Section title="其他">
             <Button onClick={checkUpdate} disabled={checking} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable disabled:opacity-60">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IRefresh size={16} /></span>
+              <span className="ios-setting-icon"><IRefresh size={16} /></span>
               <div className="flex-1">
                 <div className="text-[14px] text-on">检查更新</div>
                 <div className="text-[12px] text-mut">{checking ? "检查中…" : `当前 v${APP_VERSION} · 对比 GitHub Release`}</div>
@@ -236,7 +236,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
               <IChevR size={15} className="text-mut" />
             </Button>
             <Button onClick={() => setAbout(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
-              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IInfo size={16} /></span>
+              <span className="ios-setting-icon"><IInfo size={16} /></span>
               <div className="flex-1">
                 <div className="text-[14px] text-on">关于 HGhubX</div>
                 <div className="text-[12px] text-mut">版本 {APP_VERSION} · 仅限非商业使用</div>

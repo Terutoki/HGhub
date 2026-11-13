@@ -1,9 +1,9 @@
 import { Button, Image, Surface } from "./ios/controls";
 import React, { useEffect, useRef, useState } from "react";
-import { cover } from "../api";
+import { cover, platform } from "../api";
 export { Sheet, Modal, DockPanel } from "./ios/overlays";
 import { useStore } from "../store";
-import { IBoltF, ICheck, IClose, IGlobe, IHeartF, ISparkF, IStarF } from "../icons";
+import { IBoltF, ICheck, IClose, IGlobe, IHeartF, IMinus, ISparkF, IStarF } from "../icons";
 
 /* ——— 头像 ——— */
 export function Avatar({ hue = 250, icon, name, size = 40, ring = false, className = "" }: {
@@ -26,9 +26,12 @@ export function Avatar({ hue = 250, icon, name, size = 40, ring = false, classNa
 export function Toggle({ on, onChange, label, disabled = false }: { on: boolean; onChange: (b: boolean) => void; label?: string; disabled?: boolean }) {
   return (
     <Button disabled={disabled} onClick={() => onChange(!on)} role="switch" aria-checked={on} aria-label={label}
-      className="ios-switch" data-state={on ? "on" : "off"}>
+      className="ios-switch" data-platform={platform} data-state={on ? "on" : "off"}>
       <span className="ios-switch-track" aria-hidden="true">
-        <span className="ios-switch-thumb"><span className="ios-switch-mark" /></span>
+        <span className="ios-switch-thumb">
+          <ICheck size={14} className="ios-switch-mark is-on" />
+          <IMinus size={14} className="ios-switch-mark is-off" />
+        </span>
       </span>
     </Button>
   );

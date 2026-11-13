@@ -215,7 +215,7 @@ export function TagsPage({ onBack, wide }: { onBack: () => void; wide: boolean }
               <div className="flex flex-wrap gap-2">
                 {g.tags.map((t) => (
                   <Button key={t.id} onClick={() => push({ kind: "tag", tag: t.name, name: t.name })}
-                    className="px-3 h-8 rounded-(--r-ctl) bg-s3 text-[13px] text-on/85 pressable flex items-center gap-1">
+                    className="ios-filter-pill flex items-center gap-1">
                     {t.name}
                     {!!t.hot_score && <span className="text-[12px] text-dim">{fmt(t.hot_score)}</span>}
                   </Button>

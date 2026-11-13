@@ -33,9 +33,9 @@ export default function LoginModal() {
       <Button className="ios-icon-button" aria-label="关闭登录" onClick={() => setLoginOpen(false)}><IClose size={19} /></Button>
     </div>
     <p className="ios-description">登录后参与互动，收藏与观看记录也可在本地使用。</p>
-    <SegmentedControl className="ios-auth-tabs" aria-label="账号操作">
+    <SegmentedControl className="ios-auth-tabs" aria-label="账号操作" data-active-index={mode === "login" ? 0 : 1}>
       {([ ["login", "登录"], ["register", "注册"] ] as const).map(([key, label]) => <Button key={key}
-        aria-pressed={mode === key} className={mode === key ? "is-selected" : ""} onClick={() => { setMode(key); setErr(""); }}>{label}</Button>)}
+        aria-pressed={mode === key} onClick={() => { setMode(key); setErr(""); }}>{label}</Button>)}
     </SegmentedControl>
     <Form className="ios-auth-form" aria-busy={busy} onSubmit={event => { event.preventDefault(); void submit(); }}>
       <label className="ios-field"><span>账号</span><Input aria-label="账号" data-autofocus autoComplete="username" name="username" placeholder="输入账号" value={username}

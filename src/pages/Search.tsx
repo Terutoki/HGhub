@@ -107,15 +107,15 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
       <div className="ios-page-heading shrink-0"><h1 className="ios-page-title">搜索</h1></div>
       {/* 搜索栏 */}
       <div className="shrink-0 px-4 pb-3 flex items-center gap-2.5" >
-        <Form className="flex-1 flex items-center gap-2 h-11 rounded-(--r-ctl) bg-s3 px-3.5 focus-within:bg-s4 transition-colors"
+        <Form className="ios-search-form flex-1 flex items-center gap-2"
           onSubmit={(e) => { e.preventDefault(); submit(q); }}>
           <ISearch size={17} className="text-mut shrink-0" />
           <Input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索短剧、帖子、题材…"
             className="flex-1 min-w-0 bg-transparent text-[14px] text-on placeholder-dim outline-none" />
-          {q && <Button aria-label="关闭" type="button" onClick={() => { seqRef.current++; busy.current = false; setLoading(false); setQ(""); setSubmitted(""); setItems([]); setPosts([]); }} className="w-5 h-5 rounded-full bg-s4 flex items-center justify-center text-mut pressable"><IClose size={11} /></Button>}
+          {q && <Button aria-label="关闭" type="button" onClick={() => { seqRef.current++; busy.current = false; setLoading(false); setQ(""); setSubmitted(""); setItems([]); setPosts([]); }} className="ios-icon-button ios-search-clear"><IClose size={16} /></Button>}
         </Form>
         <Button onClick={() => push({ kind: "ranks" })} aria-label="排行榜"
-          className="w-11 h-11 rounded-(--r-sm) flex items-center justify-center bg-primary text-on-primary pressable elev-2">
+          variant="primary" className="ios-icon-button ios-search-shortcut">
           <ITrophy size={19} />
         </Button>
       </div>
@@ -180,11 +180,9 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
           </>
         ) : (
           <>
-            <SegmentedControl className="flex gap-1 p-1 rounded-(--r-ctl) bg-s3 mt-1 mb-3">
+            <SegmentedControl className="mt-1 mb-3" aria-label="搜索结果类型" data-active-index={tab === "video" ? 0 : 1}>
               {([["video", "视频"], ["post", "帖子"]] as const).map(([k, label]) => (
-                <Button aria-pressed={tab === k} key={k} onClick={() => changeTab(k)}
-                  className={`flex-1 h-8 rounded-(--r-sm) text-[13px] font-semibold pressable ${tab === k ? "tonal text-on-sec" : "text-mut"}`}
-                  style={tab === k ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{label}</Button>
+                <Button aria-pressed={tab === k} key={k} onClick={() => changeTab(k)}>{label}</Button>
               ))}
             </SegmentedControl>
             <div className="text-[12px] text-mut mb-2.5">「{submitted}」共 <span className="text-primary font-bold">{tab === "video" ? items.length : posts.length}</span> 条结果</div>
@@ -260,10 +258,9 @@ export function RankPage({ onBack, wide }: { onBack: () => void; wide: boolean }
               <div className="text-[12px] text-mut mt-1">{meta.desc} · 每 10 分钟更新</div>
             </div>
           </div>
-          <SegmentedControl className="flex bg-s3 rounded-(--r-ctl) p-1 mt-3">
+          <SegmentedControl className="mt-3" aria-label="榜单类型" data-active-index={RANK_TABS.findIndex(item => item.k === tab)}>
             {RANK_TABS.map((t) => (
-              <Button aria-pressed={tab === t.k} key={t.k} onClick={() => setTab(t.k)}
-                className={`flex-1 h-8 rounded-(--r-ctl) text-[13px] font-semibold transition-all ${tab === t.k ? "tonal elev-1" : "text-mut"}`}>{t.label}</Button>
+              <Button aria-pressed={tab === t.k} key={t.k} onClick={() => setTab(t.k)}>{t.label}</Button>
             ))}
           </SegmentedControl>
         </div>

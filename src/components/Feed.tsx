@@ -1330,15 +1330,13 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
             <div className="flex flex-col" style={{ height: "72vh" }}>
               {/* 双栏抽屉：详情 / 选集 */}
               <div className="shrink-0 flex items-center gap-2 px-4 pb-2">
-                <SegmentedControl className="flex flex-1 bg-s3 rounded-(--r-ctl) p-1">
+                <SegmentedControl className="flex-1" aria-label="剧集面板" data-active-index={panel === "detail" ? 0 : 1}>
                   {([["detail", "详情"], ["episodes", "选集"]] as const).map(([k, l]) => (
-                    <Button aria-pressed={panel === k} key={k} onClick={() => setPanel(k)}
-                      className={`flex-1 h-8 rounded-(--r-ctl) text-[13px] font-semibold pressable ${panel === k ? "text-on-sec" : "text-mut"}`}
-                      style={panel === k ? { background: "var(--p-sec)", color: "var(--p-primary)" } : undefined}>{l}</Button>
+                    <Button aria-pressed={panel === k} key={k} onClick={() => setPanel(k)}>{l}</Button>
                   ))}
                 </SegmentedControl>
                 <Button onClick={() => setPanel(null)} aria-label="关闭"
-                  className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-mut pressable">
+                  className="ios-icon-button">
                   <IClose size={14} />
                 </Button>
               </div>
