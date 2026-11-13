@@ -188,6 +188,7 @@ export const api = {
   /* 线路（数据源）：固定线路写死在 Rust 侧，镜像线路从地址发布页拉、推荐镜像从发布入口页拉 */
   lineState: () => call<LineState>("line_state"),
   lineSet: (url: string) => call<string>("line_set", { url }),
+  lineCancel: () => call<void>("line_cancel"),
   lineMirrors: () => call<LineMirrors>("line_mirrors"),
   lineProbe: (urls: string[]) => call<LineProbe[]>("line_probe", { urls }),
   lineAuto: () => call<LineAuto>("line_auto"),
@@ -224,7 +225,7 @@ export type LineMirrors = { source: string; script?: string; items: LineItem[]; 
 export type LineProbe = { url: string; ok: boolean; status?: number; ms: number; error?: string };
 export type LineHealth = { base: string; ok: boolean; ms: number; status: number | null };
 
-/** 自动选线：只比 `.com` 与 `.ai` 两条，取通的那条、快的那条。 */
+/** 自动选线：主站可用时优先，否则检测可信发布页中的镜像。 */
 export type LineAutoCandidate = {
   tier: "main" | "cn" | "mirror";
   url: string;
@@ -234,12 +235,13 @@ export type LineAutoCandidate = {
   status: number | null;
 };
 export type LineAuto = {
+  cancelled?: boolean;
   previous: string;
   base: string;
   switched: boolean;
   pick: {
     base: string;
-    tier: "main" | "cn" | "none";
+    tier: "main" | "cn" | "mirror" | "none";
     ms: number;
     reason: string;
     candidates: LineAutoCandidate[];
@@ -248,6 +250,7 @@ export type LineAuto = {
 
 /** 回切主站的探测结果：`probe.ok` 为主站到底通不通 */
 export type LineTryMain = {
+  cancelled?: boolean;
   previous: string;
   base: string;
   switched: boolean;

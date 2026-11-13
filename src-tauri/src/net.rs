@@ -52,7 +52,7 @@ pub fn base() -> String {
 
 /// 线路必须是纯 HTTPS origin，不允许路径、认证、查询串或片段。
 pub fn normalize_base(raw: &str) -> Option<String> {
-    let parsed = network_policy::parse_target(raw.trim()).ok()?;
+    let parsed = network_policy::parse_target_with_mode(raw.trim(), true).ok()?;
     if parsed.scheme() != "https"
         || parsed.path() != "/"
         || parsed.query().is_some()
@@ -73,15 +73,21 @@ pub fn trusted_auth_origin(origin: &str) -> bool {
         || crate::lines::is_trusted_mirror(origin)
 }
 
-/// 启动时绑定线路：唯一播放源固定为 huangguoai.com，不再恢复旧 line.json
-/// （升级前用户可能停在镜像），直接清掉旧配置，base 恒为 DEFAULT_BASE。
+fn persisted_base(text: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    normalize_base(value.get("base")?.as_str()?)
+}
+
+/// 启动时恢复旧线路，但本地文件本身不会授予镜像凭据权限。
 pub fn bind_base(dir: &std::path::Path) {
     network_policy::bind_security(dir);
     let path = dir.join("line.json");
-    match std::fs::remove_file(&path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => {}
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        if let Some(next) = persisted_base(&text) {
+            if let Ok(mut current) = BASE.write() {
+                *current = next;
+            }
+        }
     }
     if let Ok(mut f) = BASE_FILE.write() {
         *f = Some(path);
@@ -92,14 +98,19 @@ pub fn bind_base(dir: &std::path::Path) {
 pub fn set_base(url: &str) -> Result<String, String> {
     let next = normalize_base(url)
         .ok_or_else(|| "线路地址无效（需要纯 HTTPS 站点地址，禁止内网）".to_string())?;
-    let previous = base();
-    crate::lines::remember_line(&next);
-    if let Ok(mut cur) = BASE.write() {
-        *cur = next.clone();
+    if !crate::lines::is_fixed(&next) && !crate::lines::is_trusted_mirror(&next) {
+        return Err("线路不在固定线路或可信发布页清单中".into());
     }
-    if let Some(path) = BASE_FILE.read().ok().and_then(|p| p.clone()) {
-        let _ = std::fs::write(path, json!({ "base": next }).to_string());
+    let mut current = BASE.write().map_err(|_| "线路设置锁失败")?;
+    let previous = current.clone();
+    if let Some(path) = BASE_FILE.read().map_err(|_| "线路配置锁失败")?.as_ref() {
+        let temp = path.with_extension("json.tmp");
+        std::fs::write(&temp, json!({ "base": next }).to_string())
+            .and_then(|_| std::fs::rename(&temp, path))
+            .map_err(|_| "线路保存失败，已保持原线路，请检查应用数据目录")?;
     }
+    *current = next.clone();
+    drop(current);
     if previous != next {
         crate::playback_log::record(
             "line.changed",
@@ -580,25 +591,40 @@ fn dns_report(addrs: &[SocketAddr], ms: u128) -> Value {
     })
 }
 
-/// 拿到解析结果后直连一次，用来区分「DNS 能解析但 SYN 被黑洞」和「HTTP 层出错」。
+/// 独立 TCP socket 探测不使用应用层 HTTP 代理；内核 VPN/TUN 仍可能接管它。
 async fn tcp_probe(addr: Option<SocketAddr>, timeout: Duration) -> Value {
     let Some(addr) = addr else {
-        return json!({ "skipped": true, "reason": "没有可用的解析结果" });
+        return json!({
+            "mode": "direct_socket",
+            "proxy_bypassed": true,
+            "skipped": true,
+            "reason": "没有可用的解析结果",
+        });
     };
     let started = Instant::now();
+    let family = if addr.is_ipv4() { "IPv4" } else { "IPv6" };
     match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(addr)).await {
         Ok(Ok(_)) => json!({
+            "mode": "direct_socket",
+            "proxy_bypassed": true,
+            "family": family,
             "addr": addr.to_string(),
             "ok": true,
             "ms": started.elapsed().as_millis() as u64,
         }),
         Ok(Err(e)) => json!({
+            "mode": "direct_socket",
+            "proxy_bypassed": true,
+            "family": family,
             "addr": addr.to_string(),
             "ok": false,
             "ms": started.elapsed().as_millis() as u64,
             "error": e.to_string(),
         }),
         Err(_) => json!({
+            "mode": "direct_socket",
+            "proxy_bypassed": true,
+            "family": family,
             "addr": addr.to_string(),
             "ok": false,
             "timeout": true,
@@ -608,7 +634,7 @@ async fn tcp_probe(addr: Option<SocketAddr>, timeout: Duration) -> Value {
     }
 }
 
-/// 把三组探测结果压成一句人话结论 + 可执行的建议，issue 里一眼能看懂。
+/// HTTP 探测反映 App 实际请求路径；TCP 探测是独立 socket，不能据此覆盖 HTTP 结果。
 fn verdict(dns: &Value, tcp: &Value, http: &Value) -> (&'static str, String, Vec<String>) {
     let dns_err = dns.get("error").and_then(|v| v.as_str());
     let fake = dns.get("has_fake_ip").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -617,16 +643,76 @@ fn verdict(dns: &Value, tcp: &Value, http: &Value) -> (&'static str, String, Vec
     let status = http.get("status").and_then(|v| v.as_u64());
     let http_err = http.get("error").and_then(|v| v.as_str()).unwrap_or("");
     let tcp_ok = tcp.get("ok").and_then(|v| v.as_bool());
+    let proxy_configured = http
+        .get("proxy_configured")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
 
-    // 系统 resolver 报错、但真实请求能通：诊断别把人带偏。
-    if dns_err.is_some() && status.is_some() {
+    // 实际 HTTP 响应优先；TCP 探测可能走不同路径（例如应用请求经 GNOME 代理）。
+    if let Some(code @ 200..=399) = status {
+        if dns_err.is_some() {
+            return (
+                "dns_false_alarm",
+                format!("DNS 探测异常，但应用 HTTP 请求已成功（HTTP {code}）"),
+                vec![],
+            );
+        }
+        if fake {
+            return (
+                "ok_proxy",
+                format!("DNS 由代理/TUN 接管，应用 HTTP 请求正常（HTTP {code}）"),
+                vec![],
+            );
+        }
+        if proxy_configured || tcp_ok == Some(false) {
+            let direct_note = if tcp_ok == Some(false) {
+                "；独立直连 TCP 探测失败，不影响这次成功的请求"
+            } else {
+                ""
+            };
+            return (
+                "ok_proxy",
+                format!("应用 HTTP 请求已成功（HTTP {code}{direct_note}）"),
+                vec![],
+            );
+        }
+        if kinds.iter().any(|kind| {
+            matches!(kind.as_str(), Some("loopback" | "unspecified" | "private"))
+        }) {
+            return (
+                "dns_hijack",
+                format!("DNS 返回了非公网地址，但应用 HTTP 请求已成功（HTTP {code}）"),
+                vec!["检查本机 DNS、VPN/TUN 和代理设置是否符合预期".into()],
+            );
+        }
         return (
-            "dns_false_alarm",
-            "DNS 探测自身失败，但 HTTP 实际可以连通（系统 resolver 异常或被代理接管），不影响使用".into(),
+            "ok",
+            format!("连通正常（HTTP {code}），线路可用"),
             vec![],
         );
     }
-    if let Some(e) = dns_err {
+
+    // 收到 HTTP 错误状态也表示请求路径已到达 HTTP 服务，不能归因于直连 TCP 探测。
+    if let Some(code) = status {
+        return (
+            "http_status",
+            format!("应用 HTTP 请求收到服务端状态码 {code}"),
+            vec!["确认账号或内容权限；若持续出现，请稍后重试".into()],
+        );
+    }
+
+    // DNS 失败且没有可用的 HTTP 响应时再判 DNS 故障。
+    if let Some(e) = dns_err.filter(|_| http_err.is_empty()) {
+        if proxy_configured {
+            return (
+                "proxy_fail",
+                format!("代理请求失败，且本机 DNS 探测也失败：{e}。无法仅凭这两项确定上游故障位置"),
+                vec![
+                    "确认本机代理服务正在运行，并检查当前代理节点".into(),
+                    "连接代理后重试，或换网络对照".into(),
+                ],
+            );
+        }
         return (
             "dns_fail",
             format!("域名解析失败：{e}"),
@@ -637,16 +723,7 @@ fn verdict(dns: &Value, tcp: &Value, http: &Value) -> (&'static str, String, Vec
             ],
         );
     }
-    if fake {
-        // 代理正常工作时 HTTP 也是通的，这种情况不能报故障，否则每个开 Clash 的用户都会被吓一跳。
-        let http_ok = status.is_some_and(|c| (200..400).contains(&c));
-        if http_ok {
-            return (
-                "ok_proxy",
-                "DNS 被代理/TUN 接管（fake-ip），但连接正常，可继续使用".into(),
-                vec!["若要排查网络问题，请先退出代理再诊断一次".into()],
-            );
-        }
+    if fake && http_err.is_empty() {
         return (
             "fake_ip",
             format!(
@@ -662,7 +739,8 @@ fn verdict(dns: &Value, tcp: &Value, http: &Value) -> (&'static str, String, Vec
             ],
         );
     }
-    if kinds
+    if http_err.is_empty()
+        && kinds
         .iter()
         .any(|k| matches!(k.as_str(), Some("loopback" | "unspecified" | "private")))
     {
@@ -675,56 +753,83 @@ fn verdict(dns: &Value, tcp: &Value, http: &Value) -> (&'static str, String, Vec
             ],
         );
     }
+    if !http_err.is_empty() {
+        let lower = http_err.to_lowercase();
+        if proxy_configured {
+            let direct_note = if tcp_ok == Some(false) {
+                "; 独立直连 TCP 探测也失败，但它绕过了应用 HTTP 代理"
+            } else {
+                ""
+            };
+            return (
+                "proxy_fail",
+                format!("应用 HTTP 请求经已配置代理失败：{http_err}{direct_note}"),
+                vec![
+                    "确认本机代理服务正在运行，并检查当前代理节点".into(),
+                    "关闭代理的 HTTPS 解密功能后重试，或切换代理节点".into(),
+                ],
+            );
+        }
+        let certificate = lower.contains("certificate");
+        let handshake = lower.contains("tls")
+            || lower.contains("ssl")
+            || lower.contains("handshake");
+        return (
+            if certificate {
+                "tls_intercept"
+            } else if handshake {
+                "tls_fail"
+            } else {
+                "http_fail"
+            },
+            if certificate {
+                format!("TLS 证书校验失败：{http_err}")
+            } else if handshake {
+                format!("HTTP TLS 握手失败：{http_err}；可能发生在代理、目标站点或中间网络，不能仅凭握手错误判定中间人拦截")
+            } else if tcp_ok == Some(false) {
+                format!("应用 HTTP 请求失败：{http_err}；独立直连 TCP 探测也失败，需要对照网络和代理路径继续定位")
+            } else {
+                format!("HTTP 请求失败：{http_err}")
+            },
+            if certificate {
+                vec![
+                    "检查代理的 HTTPS 解密设置和系统时间".into(),
+                    "换一个网络或代理节点对照".into(),
+                ]
+            } else if handshake {
+                vec![
+                    "确认系统代理或 VPN/TUN 正常，并尝试更换代理节点".into(),
+                    "换网络重试，区分目标站、代理和中间网络故障".into(),
+                ]
+            } else if tcp_ok == Some(false) {
+                vec![
+                    "检查路由器、VPN/TUN 和防火墙，再换网络对照".into(),
+                    "不要仅凭直连 TCP 超时判断运营商阻断".into(),
+                ]
+            } else {
+                vec!["稍后重试，或检查当前网络和代理设置".into()]
+            },
+        );
+    }
     if tcp_ok == Some(false) {
         let timeout = tcp.get("timeout").and_then(|v| v.as_bool()).unwrap_or(false);
         return (
             if timeout { "tcp_timeout" } else { "tcp_refused" },
             if timeout {
-                "DNS 正常，但 TCP 连接无响应（SYN 被丢弃）：运营商或防火墙阻断".to_string()
+                "DNS 正常，但独立直连 TCP socket 探测超时；这不能单独证明运营商或防火墙阻断".to_string()
             } else {
                 format!(
-                    "DNS 正常，但 TCP 连接被拒绝：{}",
+                    "DNS 正常，但独立直连 TCP socket 探测失败：{}",
                     tcp.get("error").and_then(|v| v.as_str()).unwrap_or("未知原因")
                 )
             },
             vec![
-                "换网络（尤其换运营商 / 关掉网络加速器）后重试".into(),
-                "确认没有防火墙或家长控制拦截该域名".into(),
+                "检查默认路由、VPN/TUN 和防火墙设置".into(),
+                "换网络对照；TCP 探测不经过应用层 HTTP 代理".into(),
             ],
         );
     }
-    if !http_err.is_empty() {
-        let lower = http_err.to_lowercase();
-        let tls = lower.contains("certificate")
-            || lower.contains("tls")
-            || lower.contains("ssl")
-            || lower.contains("handshake");
-        return (
-            if tls { "tls_intercept" } else { "http_fail" },
-            if tls {
-                "TLS 握手/证书校验失败：多半是代理做了中间人，或系统时间不对".to_string()
-            } else {
-                format!("HTTP 请求失败：{http_err}")
-            },
-            vec![
-                "关闭代理的「HTTPS 解密 / 中间人」功能".into(),
-                "检查系统时间是否准确".into(),
-            ],
-        );
-    }
-    match status {
-        Some(code) if (200..400).contains(&code) => (
-            "ok",
-            format!("连通正常（HTTP {code}），线路可用"),
-            vec![],
-        ),
-        Some(code) => (
-            "http_status",
-            format!("域名与网络都通，但服务端返回 HTTP {code}"),
-            vec!["稍后重试，或换一条线路".into()],
-        ),
-        None => ("unknown", "诊断信息不足".into(), vec![]),
-    }
+    ("unknown", "信息不足：HTTP 请求和 TCP 探测均未给出可归类结果".into(), vec![])
 }
 
 /// 网络自检：DNS / TCP / HTTP / 代理环境变量，用于远程定位「打不开」。
@@ -769,18 +874,23 @@ pub async fn diagnose() -> Value {
         }
     };
 
-    // TCP：拿到地址就直连一次，把「DNS 通但连不上」和「HTTP 层出错」分开。
+    // TCP 探测绕过应用 HTTP 代理；它的结果只表示 socket 直连路径，不代表 HTTP 路径。
     let tcp = tcp_probe(first_addr, Duration::from_secs(5)).await;
 
     let started = Instant::now();
+    let proxy_configured = url::Url::parse(&cur)
+        .ok()
+        .is_some_and(|target| proxy_active(&target));
     let http = match get(&format!("{cur}/"), Duration::from_secs(20), None, None).await {
         Ok(r) => json!({
             "status": r.status().as_u16(),
+            "proxy_configured": proxy_configured,
             "ms": started.elapsed().as_millis() as u64,
         }),
         Err(e) => json!({
             "kind": crate::playback_log::error_kind(&e),
             "error": e,
+            "proxy_configured": proxy_configured,
             "ms": started.elapsed().as_millis() as u64,
         }),
     };
@@ -917,7 +1027,9 @@ pub async fn edge(
             ))
         && !trusted_auth_origin(&cur)
     {
-        return Err("镜像线路仅供游客浏览；登录/注册请切换到固定线路".into());
+        if cur != base() || crate::lines::verify_published_origin(&cur).await.is_err() {
+            return Err("镜像线路仅供游客浏览；登录/注册请切换到固定线路或重新加载发布页验证镜像".into());
+        }
     }
     let (encoded, ctype) = match &body {
         Some(v) => (
@@ -1231,6 +1343,90 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_http_success_overrides_a_failed_direct_tcp_probe() {
+        let dns = json!({
+            "count": 2,
+            "has_fake_ip": false,
+            "kinds": ["public"],
+        });
+        let tcp = json!({
+            "mode": "direct_socket",
+            "proxy_bypassed": true,
+            "family": "IPv6",
+            "ok": false,
+            "timeout": true,
+            "error": "连接超时（SYN 无响应）",
+        });
+        let http = json!({ "status": 200, "proxy_configured": true });
+
+        let (code, summary, advice) = verdict(&dns, &tcp, &http);
+        assert_eq!(code, "ok_proxy");
+        assert!(summary.contains("HTTP 200"));
+        assert!(summary.contains("独立直连 TCP 探测失败"));
+        assert!(advice.is_empty());
+    }
+
+    #[test]
+    fn diagnostic_proxy_handshake_failure_does_not_blame_the_direct_route() {
+        let dns = json!({
+            "count": 2,
+            "has_fake_ip": false,
+            "kinds": ["public"],
+        });
+        let tcp = json!({
+            "mode": "direct_socket",
+            "proxy_bypassed": true,
+            "family": "IPv6",
+            "ok": false,
+            "timeout": true,
+            "error": "连接超时（SYN 无响应）",
+        });
+        let http = json!({
+            "proxy_configured": true,
+            "kind": "transport_error",
+            "error": "error sending request ← tls handshake eof",
+        });
+
+        let (code, summary, advice) = verdict(&dns, &tcp, &http);
+        assert_eq!(code, "proxy_fail");
+        assert!(summary.contains("应用 HTTP 请求经已配置代理失败"));
+        assert!(summary.contains("绕过了应用 HTTP 代理"));
+        assert!(!summary.contains("运营商"));
+        assert!(advice.iter().any(|item| item.contains("代理节点")));
+    }
+
+    #[test]
+    fn direct_tcp_failure_alone_is_not_reported_as_operator_blocking() {
+        let dns = json!({
+            "count": 1,
+            "has_fake_ip": false,
+            "kinds": ["public"],
+        });
+        let tcp = json!({ "ok": false, "timeout": true });
+        let http = json!({
+            "proxy_configured": false,
+            "kind": "transport_error",
+            "error": "connection timeout",
+        });
+
+        let (code, summary, _) = verdict(&dns, &tcp, &http);
+        assert_eq!(code, "http_fail");
+        assert!(summary.contains("独立直连 TCP 探测也失败"));
+        assert!(!summary.contains("运营商"));
+    }
+
+    #[test]
+    fn diagnostic_http_error_status_is_not_overridden_by_direct_tcp_failure() {
+        let dns = json!({ "count": 1, "has_fake_ip": false, "kinds": ["public"] });
+        let tcp = json!({ "ok": false, "timeout": true });
+        let http = json!({ "status": 503, "proxy_configured": true });
+
+        let (code, summary, _) = verdict(&dns, &tcp, &http);
+        assert_eq!(code, "http_status");
+        assert!(summary.contains("503"));
+    }
+
+    #[test]
     fn pinned_clients_expire_without_extending_the_dns_ttl() {
         let now = Instant::now();
         let client = Arc::new(reqwest::Client::new());
@@ -1313,6 +1509,26 @@ mod tests {
         assert!(trusted_auth_origin("https://huangguoai.ai"));
         assert!(!trusted_auth_origin("https://mirror.example"));
         assert!(!trusted_auth_origin("https://huangguoai.com.evil.example"));
+    }
+
+    #[test]
+    fn saved_line_is_restored_without_granting_credential_trust() {
+        assert_eq!(
+            persisted_base(r#"{"base":"https://legacy-mirror.invalid/"}"#),
+            Some("https://legacy-mirror.invalid".into())
+        );
+        assert!(!trusted_auth_origin("https://legacy-mirror.invalid"));
+        assert_eq!(persisted_base(r#"{"base":"https://huangguoai.com/"}"#), Some(DEFAULT_BASE.into()));
+        for raw in [
+            "invalid",
+            r#"{"base":123}"#,
+            r#"{"base":"http://example.com"}"#,
+            r#"{"base":"https://localhost"}"#,
+            r#"{"base":"https://192.168.1.1"}"#,
+            r#"{"base":"https://example.com/path"}"#,
+        ] {
+            assert_eq!(persisted_base(raw), None, "{raw}");
+        }
     }
 
     #[tokio::test]

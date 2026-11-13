@@ -49,7 +49,7 @@ export default function LoginModal() {
         {busy && <Loader className="size-5" />}{busy ? "处理中…" : mode === "login" ? "登录" : "创建账号"}
       </Button>
     </Form>
-    <p className="ios-description ios-auth-note">登录、注册仅支持固定线路；镜像线路可使用游客浏览。</p>
+    <p className="ios-description ios-auth-note">登录、注册支持固定线路与已由发布页验证的镜像；跨站点切换需重新登录。</p>
   </div>;
   return isMobile ? <Sheet open={loginOpen} onClose={() => setLoginOpen(false)} label={title}>{content}</Sheet>
     : <Modal open={loginOpen} onClose={() => setLoginOpen(false)} label={title} width={440}>{content}</Modal>;

@@ -3,6 +3,7 @@ import { Loader } from "./ios/effects";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, hostOf, isMobile, type LineItem, type LineProbe, type LineState } from "../api";
 import { tracePlayback } from "../playbackDiagnostics";
+import { autoLineEnabled, setAutoLine } from "../autoLine";
 import { useStore } from "../store";
 import { Modal, Sheet } from "./ui";
 import { ICheck, IClose, IRefresh, ISettings } from "../icons";
@@ -69,6 +70,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
       setRecommended(res?.recommended || []);
     } catch (e) {
       setMirrors([]);
+      setRecommended([]);
       setMirrorErr((e as Error).message || "镜像线路获取失败");
     } finally {
       setLoadingMirrors(false);
@@ -80,6 +82,13 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
     if (!open) return;
     readState();
     if (mirrors === null) void readMirrors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("hg:line-changed", readState);
+    return () => window.removeEventListener("hg:line-changed", readState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -102,16 +111,19 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
 
   const pick = async (url: string) => {
     if (switching || state?.base === url) return;
+    const wasAuto = autoLineEnabled();
     setSwitching(url);
     try {
+      await setAutoLine(false);
       const next = await api.lineSet(url);
       tracePlayback("line.manual", { line: hostOf(next), prev: hostOf(state?.base ?? ""), ok: true });
       if (next !== state?.base) setUser(null);
       setState((s) => (s ? { ...s, base: next } : s));
-      toast(`线路已切换到 ${hostOf(next)}，跨站点需重新登录`, "ok");
+      toast(`线路已切换到 ${hostOf(next)}，已使用手动选线，跨站点需重新登录`, "ok");
       // 走的是新域名了，列表页得重新拉一遍，否则还是旧线路的内容
       window.dispatchEvent(new Event("hg:line-changed"));
     } catch (e) {
+      if (wasAuto) void setAutoLine(true);
       tracePlayback("line.manual", { line: hostOf(url), ok: false, err: (e as Error).message });
       toast((e as Error).message || "切换失败", "info");
     } finally {
@@ -154,7 +166,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
 
         <GroupHead
           title="推荐镜像"
-          hint="发布页每次换一批 · 当前线路置顶"
+          hint="来自发布页 · 当前线路置顶"
           actions={
             recommended?.length ? (
               <Button onClick={() => probe(recommended, "recommended")} disabled={busyAll}
@@ -219,6 +231,6 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
   );
 
   return isMobile
-    ? <Sheet open={open} onClose={onClose}>{body}</Sheet>
-    : <Modal open={open} onClose={onClose} width={460}>{body}</Modal>;
+    ? <Sheet open={open} onClose={onClose} label="选择播放源">{body}</Sheet>
+    : <Modal open={open} onClose={onClose} label="选择播放源" width={460}>{body}</Modal>;
 }

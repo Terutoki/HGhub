@@ -47,6 +47,11 @@ percent-encoding = "2"
 once_cell = "1"
 url = "2"
 
+# Tauri already uses this WebKitGTK version/features; reuse it to configure only
+# the app WebView's local-media transport (see linux_webview.rs).
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
+
 # 与 reqwest 使用同一个匹配器判断 Apple 平台的目标代理，避免诊断与实际路由不一致。
 # 此库和这些 feature 已由 reqwest 引入，不额外引入网络栈。
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]

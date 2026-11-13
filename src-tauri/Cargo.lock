@@ -1681,6 +1681,7 @@ dependencies = [
  "time",
  "tokio",
  "url",
+ "webkit2gtk",
  "winreg",
 ]
 

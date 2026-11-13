@@ -20,13 +20,17 @@ impl Api {
     /// POST 信封：新播放接口 /api/videos/{id}/episodes/{ep}/playback 需要。
     async fn post(&self, path: &str, body: Option<Value>) -> Result<Value, String> {
         let origin = base();
-        let token = self.session.token(&origin);
+        let token = self.session.token(&origin).filter(|_| {
+            !crate::network_policy::strict_security() || crate::net::trusted_auth_origin(&origin)
+        });
         edge(&origin, "POST", path, body, token.as_deref()).await
     }
 
     async fn get(&self, path: &str) -> Result<Value, String> {
         let origin = base();
-        let token = self.session.token(&origin);
+        let token = self.session.token(&origin).filter(|_| {
+            !crate::network_policy::strict_security() || crate::net::trusted_auth_origin(&origin)
+        });
         edge(&origin, "GET", path, None, token.as_deref()).await
     }
 
@@ -55,6 +59,20 @@ pub async fn net_diag() -> Result<Value, String> {
 }
 
 /* ───────────────────────── 线路（数据源） ───────────────────────── */
+// Network probes run without holding this lock. Manual selection/cancellation
+// invalidates older probes; applying a result is serialized with manual writes.
+static LINE_SELECTION: std::sync::Mutex<u64> = std::sync::Mutex::new(0);
+
+fn begin_line_selection() -> Result<u64, String> {
+    let mut generation = LINE_SELECTION.lock().map_err(|_| "线路选择锁失败")?;
+    *generation = generation.wrapping_add(1);
+    Ok(*generation)
+}
+
+#[tauri::command]
+pub async fn line_cancel() -> Result<(), String> {
+    begin_line_selection().map(|_| ())
+}
 
 /// 当前线路 + 固定线路清单（镜像线路另外按需拉取）。
 #[tauri::command]
@@ -66,16 +84,13 @@ pub async fn line_state() -> Result<Value, String> {
     }))
 }
 
-/// 手动切换线路：唯一播放源固定为 huangguoai.com，只放行默认主站，其余拒绝。
+/// 手动切换线路：只允许固定线路或刚从可信发布页读取的镜像。
 #[tauri::command]
 pub async fn line_set(state: State<'_, Api>, url: String) -> Result<String, String> {
-    let next = crate::net::normalize_base(&url)
-        .ok_or_else(|| "线路地址无效（需要纯 HTTPS 站点地址，禁止内网）".to_string())?;
-    if next != crate::net::DEFAULT_BASE {
-        return Err("唯一播放源已固定，不再支持切换线路".into());
-    }
+    let mut generation = LINE_SELECTION.lock().map_err(|_| "线路选择锁失败")?;
+    *generation = generation.wrapping_add(1);
     let previous = base();
-    let applied = crate::net::set_base(&next)?;
+    let applied = crate::net::set_base(&url)?;
     if previous != applied {
         state.session.clear();
     }
@@ -97,12 +112,12 @@ pub async fn line_probe(urls: Vec<String>) -> Result<Value, String> {
     Ok(crate::lines::probe(urls).await)
 }
 
-/// 自动选线：`.com` 与 `.ai` 各探一次，选通的那条、快的那条。
+/// 自动选线：探测主站与可信发布页镜像，全部失败时保持当前线路。
 ///
-/// 和 [`line_set`] 的区别是**不清会话**：两个域名是同一个站点，登录态本来就通用；
-/// 自动切换如果清会话，用户每换一次网络就被踢下线，那是不能接受的。
+/// 保留按 origin 隔离的会话，不会把旧站点 token 发送给新站点。
 #[tauri::command]
 pub async fn line_auto() -> Result<Value, String> {
+    let selection = begin_line_selection()?;
     crate::net::refresh_client();
     let pick = crate::lines::auto_pick().await;
     let chosen = pick
@@ -110,9 +125,12 @@ pub async fn line_auto() -> Result<Value, String> {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let previous = base();
     let mut switched = false;
-    if !chosen.is_empty() && chosen != previous {
+    let generation = LINE_SELECTION.lock().map_err(|_| "线路选择锁失败")?;
+    let previous = base();
+    if *generation == selection
+        && pick.get("reason").and_then(Value::as_str) != Some("all-down")
+        && !chosen.is_empty() && chosen != previous {
         let next = crate::net::set_base(&chosen)?;
         switched = next != previous;
     }
@@ -120,6 +138,7 @@ pub async fn line_auto() -> Result<Value, String> {
         "previous": previous,
         "base": crate::net::base(),
         "switched": switched,
+        "cancelled": *generation != selection,
         "pick": pick,
     }))
 }
@@ -130,11 +149,13 @@ pub async fn line_auto() -> Result<Value, String> {
 /// 这个只问一句「主站现在通不通」，代价一个请求，可以频繁调用。
 #[tauri::command]
 pub async fn line_try_main() -> Result<Value, String> {
+    let selection = begin_line_selection()?;
     crate::net::refresh_client();
     let probe = crate::lines::try_main().await;
-    let previous = base();
     let mut switched = false;
-    if probe.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+    let generation = LINE_SELECTION.lock().map_err(|_| "线路选择锁失败")?;
+    let previous = base();
+    if *generation == selection && probe.get("ok").and_then(Value::as_bool).unwrap_or(false) {
         let chosen = probe.get("base").and_then(Value::as_str).unwrap_or_default();
         if !chosen.is_empty() && chosen != previous {
             let next = crate::net::set_base(chosen)?;
@@ -146,6 +167,7 @@ pub async fn line_try_main() -> Result<Value, String> {
         "base": crate::net::base(),
         "switched": switched,
         "probe": probe,
+        "cancelled": *generation != selection,
     }))
 }
 
@@ -460,9 +482,15 @@ fn request_ios_orientation(landscape: bool) {
 #[tauri::command]
 pub async fn app_boot(state: State<'_, Api>) -> Result<Value, String> {
     let origin = base();
+    if crate::network_policy::strict_security() && state.session.token(&origin).is_some() {
+        let _ = crate::lines::verify_published_origin(&origin).await;
+    }
+    let origin = base();
+    let credentials_allowed = !crate::network_policy::strict_security()
+        || crate::net::trusted_auth_origin(&origin);
     Ok(json!({
-        "user": state.session.user(&origin),
-        "logged_in": state.session.token(&origin).is_some(),
+        "user": if credentials_allowed { state.session.user(&origin) } else { Value::Null },
+        "logged_in": credentials_allowed && state.session.token(&origin).is_some(),
         "base": origin,
         "strict_security": crate::network_policy::strict_security(),
         "cli_relaxed": crate::network_policy::cli_strict_override() == Some(false),

@@ -7,6 +7,8 @@ mod ios_layout;
 mod lines;
 #[cfg(target_os = "linux")]
 mod linux_http;
+#[cfg(target_os = "linux")]
+mod linux_webview;
 mod logging;
 #[cfg(target_os = "macos")]
 mod macos_titlebar;
@@ -103,6 +105,12 @@ pub fn run() {
         })
         .plugin(
             tauri::plugin::Builder::<_, ()>::new("navigation-guard")
+                .on_webview_ready(|webview| {
+                    #[cfg(target_os = "linux")]
+                    linux_webview::configure(&webview);
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = webview;
+                })
                 .on_navigation(|_webview, url| {
                     let host = url.host_str().unwrap_or("");
                     (url.scheme() == "tauri" && host == "localhost")
@@ -184,6 +192,7 @@ pub fn run() {
             api::net_diag,
             api::line_state,
             api::line_set,
+            api::line_cancel,
             api::line_mirrors,
             api::line_probe,
             api::line_auto,

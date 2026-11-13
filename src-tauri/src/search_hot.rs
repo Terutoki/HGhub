@@ -101,11 +101,12 @@ fn cache_bust_value() -> String {
 }
 
 async fn fetch_html() -> Result<String, String> {
+    let base = crate::net::base();
     tokio::time::timeout(REQUEST_TIMEOUT, async {
-        let referer = format!("{}/", crate::net::DEFAULT_BASE);
+        let referer = format!("{base}/");
         let url = format!(
             "{}/search/?_hghubx_hot={}",
-            crate::net::DEFAULT_BASE,
+            base,
             cache_bust_value()
         );
         let mut response = crate::net::get(

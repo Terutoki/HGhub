@@ -17,6 +17,7 @@
     "test:ios-overlays": "node scripts/test-ios-overlays.mjs",
     "test:diagnostic-copy": "node scripts/test-diagnostic-copy.mjs",
     "test:storage-migration": "node scripts/test-storage-migration.mjs",
+    "test:line-selection": "node scripts/test-line-selection.mjs",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build",

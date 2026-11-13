@@ -3,6 +3,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, APP_VERSION, hostOf, logLine, platform, type UpdateInfo } from "../api";
 import { useStore } from "../store";
 import { Modal, Toggle } from "../components/ui";
+import LinePicker from "../components/LinePicker";
+import { autoLineEnabled, setAutoLine } from "../autoLine";
 import { copyPlaybackLog, initPlaybackLog, setPlaybackLog, tracePlayback, usePlaybackLog } from "../playbackDiagnostics";
 import { formatNetDiag, shortVerdict } from "../netDiagReport";
 import { copyText } from "../clipboard";
@@ -21,6 +23,9 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
   const { theme, themePreference, setTheme, favs, history, muteOnStartup, setMuteOnStartup, preferHevc, setPreferHevc, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast } = useStore();
   const [about, setAbout] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
+  const [lineOpen, setLineOpen] = useState(false);
+  const [lineBase, setLineBase] = useState("");
+  const [autoLineOn, setAutoLineOn] = useState(autoLineEnabled);
   const [clearing, setClearing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -33,6 +38,18 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
   const [copyingReport, setCopyingReport] = useState(false);
 
   useEffect(() => { void initPlaybackLog(); }, []);
+
+  const readLine = () => { api.lineState().then((state) => setLineBase(state.base)).catch(() => {}); };
+  useEffect(() => {
+    const sync = () => { readLine(); setAutoLineOn(autoLineEnabled()); };
+    sync();
+    window.addEventListener("hg:line-changed", sync);
+    window.addEventListener("hg:auto-line-changed", sync);
+    return () => {
+      window.removeEventListener("hg:line-changed", sync);
+      window.removeEventListener("hg:auto-line-changed", sync);
+    };
+  }, []);
 
   const checkUpdate = async () => {
     setChecking(true);
@@ -131,13 +148,25 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           </Section>
 
           <Section title="网络">
-            <div className="flex items-center gap-3 px-3.5 py-3">
+            <Button onClick={() => setLineOpen(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
               <span className="ios-setting-icon"><IBoltF size={16} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] text-on">播放源</div>
-                <div className="text-[12px] text-mut truncate">固定 huangguoai.com</div>
+                <div className="text-[12px] text-mut truncate">{lineBase ? hostOf(lineBase) : "读取中…"}</div>
               </div>
-              <span className="text-[12px] text-mint">已固定</span>
+              <IChevR size={15} className="text-mut" />
+            </Button>
+            <div className="flex items-center gap-3 px-3.5 py-3">
+              <span className="ios-setting-icon"><IRefresh size={15} /></span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] text-on">自动选择线路</div>
+                <div className="text-[12px] text-mut">主站不可用时检测已发布镜像；关闭后保留手动选择</div>
+              </div>
+              <Toggle label="自动选择线路" on={autoLineOn} onChange={(on) => {
+                void setAutoLine(on).catch(() => toast("自动选线暂停失败，请重试", "info"));
+                setAutoLineOn(on);
+                toast(on ? "已开启自动选择线路" : "已关闭自动选线，可手动选择播放源", "info");
+              }} />
             </div>
             <div className="flex items-center gap-3 px-3.5 py-3">
               <span className="ios-setting-icon"><ILockF size={15} /></span>
@@ -248,6 +277,8 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           <div className="text-center text-[12px] text-dim mt-5">HGhubX {APP_VERSION} · {platform === "android" ? "Android" : platform === "ios" ? "iOS" : platform === "macos" ? "macOS" : platform === "linux" ? "Linux" : "Windows"} 客户端</div>
         </div>
       </div>
+
+      <LinePicker open={lineOpen} onClose={() => { setLineOpen(false); readLine(); }} />
 
       <Modal open={diagReport !== null} onClose={() => setDiagReport(null)} width={520}>
         <div className="p-5">

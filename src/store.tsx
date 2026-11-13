@@ -246,17 +246,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [p]);
 
   useEffect(() => {
-    api.boot()
-      .then((r) => {
-        if (r.user && (r.user as User).id) setUser(r.user as User);
+    let request = 0;
+    let active = true;
+    const readBoot = () => {
+      const current = ++request;
+      void api.boot().then((r) => {
+        if (!active || current !== request) return;
+        setUser(r.user && (r.user as User).id ? r.user as User : null);
         if (typeof r.strict_security === "boolean") {
           setStrictSecurityState(r.strict_security);
           setHtmlStrictSecurity(r.strict_security);
           setStrictSecurityReady(true);
         }
         setCliRelaxed(!!r.cli_relaxed);
-      })
-      .catch(() => { /* 离线也能用 */ });
+      }).catch(() => { /* 离线也能用 */ });
+    };
+    readBoot();
+    window.addEventListener("hg:line-changed", readBoot);
+    return () => { active = false; window.removeEventListener("hg:line-changed", readBoot); };
   }, []);
 
   const setStrictSecurity = useCallback(async (on: boolean) => {
