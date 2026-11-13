@@ -4,6 +4,7 @@ import { api, APP_VERSION, hostOf, logLine, platform, type UpdateInfo } from "..
 import { useStore } from "../store";
 import { Modal, Toggle } from "../components/ui";
 import LinePicker from "../components/LinePicker";
+import ProxySettings from "../components/ProxySettings";
 import { autoLineEnabled, setAutoLine } from "../autoLine";
 import { copyPlaybackLog, initPlaybackLog, setPlaybackLog, tracePlayback, usePlaybackLog } from "../playbackDiagnostics";
 import { formatNetDiag, shortVerdict } from "../netDiagReport";
@@ -148,6 +149,7 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
           </Section>
 
           <Section title="网络">
+            <ProxySettings />
             <Button onClick={() => setLineOpen(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
               <span className="ios-setting-icon"><IBoltF size={16} /></span>
               <div className="flex-1 min-w-0">

@@ -188,6 +188,8 @@ export const api = {
   /* 线路（数据源）：固定线路写死在 Rust 侧，镜像线路从地址发布页拉、推荐镜像从发布入口页拉 */
   lineState: () => call<LineState>("line_state"),
   lineSet: (url: string) => call<string>("line_set", { url }),
+  lineCustomSet: (url: string) => call<LineApply>("line_custom_set", { url }),
+  lineReset: () => call<LineApply>("line_reset"),
   lineCancel: () => call<void>("line_cancel"),
   lineMirrors: () => call<LineMirrors>("line_mirrors"),
   lineProbe: (urls: string[]) => call<LineProbe[]>("line_probe", { urls }),
@@ -196,6 +198,11 @@ export const api = {
   lineTryMain: () => call<LineTryMain>("line_try_main"),
   /* 线路体检：探一次 /api/videos，和自动选线同一判据 */
   lineHealth: () => call<LineHealth>("line_health"),
+
+  /* 应用内代理：只影响本应用的上游网络请求。 */
+  proxyState: () => call<ProxyState>("proxy_state"),
+  proxySet: (mode: ProxyMode, url: string) => call<ProxyState>("proxy_set", { mode, url }),
+  proxyTest: (mode: ProxyMode, url: string) => call<ProxyProbe>("proxy_test", { mode, url }),
 
   /* 更新检查：对比 GitHub Release 的 tag */
   checkUpdate: () => call<UpdateInfo>("check_update"),
@@ -220,10 +227,23 @@ export type UpdateInfo = {
 /* ── 线路（数据源） ─────────────────────────────────────── */
 
 export type LineItem = { name?: string; url: string; host?: string };
-export type LineState = { base: string; default: string; fixed: LineItem[] };
+export type LineState = { base: string; default: string; fixed: LineItem[]; custom?: boolean };
+export type LineApply = { base: string; custom: boolean };
 export type LineMirrors = { source: string; script?: string; items: LineItem[]; recommended_source?: string; recommended: LineItem[] };
 export type LineProbe = { url: string; ok: boolean; status?: number; ms: number; error?: string };
 export type LineHealth = { base: string; ok: boolean; ms: number; status: number | null };
+
+export type ProxyMode = "system" | "custom" | "off";
+export type ProxyState = {
+  mode: ProxyMode;
+  /** 保存过的自定义地址，仅用于设置表单回填，不写入日志。 */
+  url: string;
+  /** 不含认证信息的实际出口。 */
+  effective?: string | null;
+  system_proxy?: boolean;
+  env_proxy?: boolean;
+};
+export type ProxyProbe = { ok: boolean; status?: number | null; ms: number; error?: string; via?: string };
 
 /** 自动选线：主站可用时优先，否则检测可信发布页中的镜像。 */
 export type LineAutoCandidate = {

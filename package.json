@@ -18,6 +18,7 @@
     "test:diagnostic-copy": "node scripts/test-diagnostic-copy.mjs",
     "test:storage-migration": "node scripts/test-storage-migration.mjs",
     "test:line-selection": "node scripts/test-line-selection.mjs",
+    "test:network-settings": "node scripts/test-network-settings.mjs",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build",

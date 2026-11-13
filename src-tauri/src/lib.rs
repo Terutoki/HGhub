@@ -17,6 +17,7 @@ mod media_dns;
 mod net;
 mod network_policy;
 mod playback_log;
+mod proxy;
 mod search_hot;
 mod session;
 
@@ -192,12 +193,17 @@ pub fn run() {
             api::net_diag,
             api::line_state,
             api::line_set,
+            api::line_custom_set,
+            api::line_reset,
             api::line_cancel,
             api::line_mirrors,
             api::line_probe,
             api::line_auto,
             api::line_try_main,
             api::line_health,
+            api::proxy_state,
+            api::proxy_set,
+            api::proxy_test,
             api::check_update,
             api::open_url,
             api::set_orientation,

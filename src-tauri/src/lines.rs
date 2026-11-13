@@ -521,7 +521,7 @@ fn js_array(source: &str, name: &str) -> Result<Option<Vec<String>>, String> {
 }
 
 /// Validate the unwrapped /api/videos data, rather than HTML or status alone.
-fn healthy_video_data(data: &Value) -> bool {
+pub(crate) fn healthy_video_data(data: &Value) -> bool {
     let Some(items) = data.get("items").and_then(Value::as_array) else {
         return false;
     };

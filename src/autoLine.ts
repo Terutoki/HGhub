@@ -175,6 +175,15 @@ function attach() {
   });
   window.addEventListener("online", () => { step = 0; void pickLine("online"); });
   window.addEventListener("offline", () => schedule(30_000));
+  window.addEventListener("hg:proxy-changed", () => {
+    // Backend invalidates outstanding selections on save. Keep the selected
+    // line and let a fresh health check evaluate the new route after settling.
+    failStreak = 0;
+    downStreak = 0;
+    step = 0;
+    lastPickAt = null;
+    schedule(RECHECK_MS);
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") stopTimer();
     else { downStreak = 0; step = 0; void check("visible"); }

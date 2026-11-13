@@ -55,6 +55,7 @@ try {
           if (command === "app_boot") return { strict_security: true, base: fixture.base, user: fixture.loggedIn ? { id: 17, username: "fixture-user" } : null };
           if (command === "debug_log" || command === "playback_log_write") return;
           if (command === "playback_log_status") return { enabled: false, path: "fixture.log", error: null };
+          if (command === "proxy_state") return { mode: "system", url: "", effective: null, system_proxy: false, env_proxy: false };
           if (command === "line_state") return { base: fixture.base, default: MAIN, fixed: [
             { name: "固定线路 1", url: MAIN }, { name: "固定线路 2", url: "https://secondary.fixture.invalid" },
           ] };

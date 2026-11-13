@@ -52,6 +52,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const [details, setDetails] = useState<Record<number, Detail>>({});
   const [playUrls, setPlayUrls] = useState<Record<string, string>>({});
   const [hevcUrls, setHevcUrls] = useState<Record<string, string>>({});
+  const [proxyRetry, setProxyRetry] = useState(0);
   const [cards, setCards] = useState<Record<number, VideoCard>>({});
   const [posts, setPosts] = useState<Record<number, Post>>({});
   const [related, setRelated] = useState<VideoCard[]>([]);
@@ -138,6 +139,17 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const mainUrl = playUrls[playKey] || "";
   const hevcUrl = hevcUrls[playKey] || "";
   const playUrl = preferHevc && hevcUrl ? hevcUrl : mainUrl;
+  useEffect(() => {
+    const retry = () => {
+      setErr("");
+      setWaiting(true);
+      // Resolved media is retried in VideoSurface. Only an unresolved API call
+      // needs another lookup, so a working stream keeps its episode and position.
+      if (!playUrl) setProxyRetry(value => value + 1);
+    };
+    window.addEventListener("hg:proxy-changed", retry);
+    return () => window.removeEventListener("hg:proxy-changed", retry);
+  }, [playUrl]);
   useEffect(() => { setZoom({ s: 1, x: 0, y: 0, g: false }); pinchRef.current = null; pointersRef.current.clear(); }, [playUrl]);
   useEffect(() => { videoRef.current?.trace("page.active", { active, view: mode, video_id: curId, episode: curEp }); }, [active, mode, curId, curEp]);
   const episodes = detail?.episodes || [];
@@ -308,7 +320,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, videoIds]);
+  }, [index, videoIds, proxyRetry]);
 
   /* 吃瓜帖子：直接拿帖子详情（含 video_url） */
   useEffect(() => {
@@ -320,7 +332,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, index, videoIds]);
+  }, [kind, index, videoIds, proxyRetry]);
 
   /* 相关推荐：切到当前视频时拉一次 */
   useEffect(() => {
@@ -367,7 +379,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
       .catch((e) => { if (alive) setErr((e as Error).message || "取播放地址失败"); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curId, curEp]);
+  }, [curId, curEp, proxyRetry]);
 
   /* 剧集预热：相邻集提前取好播放地址，切集秒开 */
   useEffect(() => {
@@ -896,7 +908,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   onTime={onTimeTick}
                   onDuration={onDurationTick}
                   onSize={(w, h) => setVsize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }))}
-                  onPlaying={() => { setPaused(false); setWaiting(false); }}
+                  onPlaying={() => { setPaused(false); setWaiting(false); setErr(""); }}
                   onPause={() => setPaused(true)}
                   onWaiting={() => setWaiting(true)}
                   onEnded={() => { const next = episodes.find((e) => e.ep_num === curEp + 1); if (next) pickEp(next.ep_num); }}

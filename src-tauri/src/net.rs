@@ -39,15 +39,31 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_BASE: &str = "https://huangguoai.com";
 
 /// 当前上游基址（不带结尾斜杠）。可在设置里切到固定线路 2 或镜像线路，运行时立即生效。
-static BASE: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new(DEFAULT_BASE.to_string()));
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LineConfig {
+    base: String,
+    custom: bool,
+}
+
+impl Default for LineConfig {
+    fn default() -> Self {
+        Self { base: DEFAULT_BASE.to_string(), custom: false }
+    }
+}
+
+static BASE: Lazy<RwLock<LineConfig>> = Lazy::new(|| RwLock::new(LineConfig::default()));
 /// 线路配置落盘位置（应用数据目录/line.json），由 [`bind_base`] 在启动时绑定。
 static BASE_FILE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
 
 /// 当前上游基址。
 pub fn base() -> String {
     BASE.read()
-        .map(|b| b.clone())
+        .map(|b| b.base.clone())
         .unwrap_or_else(|_| DEFAULT_BASE.to_string())
+}
+
+pub fn is_custom_line() -> bool {
+    BASE.read().is_ok_and(|line| line.custom)
 }
 
 /// 线路必须是纯 HTTPS origin，不允许路径、认证、查询串或片段。
@@ -66,11 +82,12 @@ pub fn normalize_base(raw: &str) -> Option<String> {
 /// 哪些 origin 允许携带凭据：两个固定入口，加上发布页推荐过、且当前可能作为线路的镜像。
 ///
 /// 国内网络连不上 `.com`，只能用镜像；镜像和主站是同一后端、同一个账号体系。
-/// 只认发布页真的给过的地址（见 [`crate::lines::is_trusted_mirror`]），
-/// 用户手填的任意域名依旧会被严格模式拦下。
+/// 自定义线路必须由用户显式保存；旧格式文件只恢复地址，不自动授予登录权限。
+/// 会话仍绑定 origin，切换地址不会把已有 token 发送给另一个站点。
 pub fn trusted_auth_origin(origin: &str) -> bool {
     matches!(origin, "https://huangguoai.com" | "https://huangguoai.ai")
         || crate::lines::is_trusted_mirror(origin)
+        || BASE.read().is_ok_and(|line| line.custom && line.base == origin)
 }
 
 fn persisted_base(text: &str) -> Option<String> {
@@ -78,16 +95,26 @@ fn persisted_base(text: &str) -> Option<String> {
     normalize_base(value.get("base")?.as_str()?)
 }
 
+fn persisted_line(text: &str) -> Option<LineConfig> {
+    let base = persisted_base(text)?;
+    let value: Value = serde_json::from_str(text).ok()?;
+    // Accept the fork's v2 format as well as legacy {base}. Only explicit v2
+    // custom selections carry custom-origin consent across restarts.
+    let custom = value.get("v").and_then(Value::as_u64) == Some(2)
+        && value.get("custom").and_then(Value::as_bool).unwrap_or(false)
+        && base != DEFAULT_BASE;
+    Some(LineConfig { base, custom })
+}
+
 /// 启动时恢复旧线路，但本地文件本身不会授予镜像凭据权限。
 pub fn bind_base(dir: &std::path::Path) {
     network_policy::bind_security(dir);
+    crate::proxy::bind(dir);
     let path = dir.join("line.json");
-    if let Ok(text) = std::fs::read_to_string(&path) {
-        if let Some(next) = persisted_base(&text) {
-            if let Ok(mut current) = BASE.write() {
-                *current = next;
-            }
-        }
+    let restored = std::fs::read_to_string(&path).ok()
+        .and_then(|text| persisted_line(&text)).unwrap_or_default();
+    if let Ok(mut current) = BASE.write() {
+        *current = restored;
     }
     if let Ok(mut f) = BASE_FILE.write() {
         *f = Some(path);
@@ -96,20 +123,35 @@ pub fn bind_base(dir: &std::path::Path) {
 
 /// 切换线路并落盘，返回规整后的地址。
 pub fn set_base(url: &str) -> Result<String, String> {
-    let next = normalize_base(url)
-        .ok_or_else(|| "线路地址无效（需要纯 HTTPS 站点地址，禁止内网）".to_string())?;
-    if !crate::lines::is_fixed(&next) && !crate::lines::is_trusted_mirror(&next) {
-        return Err("线路不在固定线路或可信发布页清单中".into());
-    }
-    let mut current = BASE.write().map_err(|_| "线路设置锁失败")?;
-    let previous = current.clone();
-    if let Some(path) = BASE_FILE.read().map_err(|_| "线路配置锁失败")?.as_ref() {
+    apply_base(url, false)
+}
+
+/// An explicit custom selection, separate from published/automatic candidates.
+pub fn set_custom_base(url: &str) -> Result<String, String> {
+    apply_base(url, true)
+}
+
+fn save_line(current: &mut LineConfig, next: LineConfig, path: Option<&std::path::Path>) -> Result<(), String> {
+    if let Some(path) = path {
         let temp = path.with_extension("json.tmp");
-        std::fs::write(&temp, json!({ "base": next }).to_string())
+        std::fs::write(&temp, json!({ "v": 2, "base": next.base, "custom": next.custom }).to_string())
             .and_then(|_| std::fs::rename(&temp, path))
             .map_err(|_| "线路保存失败，已保持原线路，请检查应用数据目录")?;
     }
-    *current = next.clone();
+    *current = next;
+    Ok(())
+}
+
+fn apply_base(url: &str, custom: bool) -> Result<String, String> {
+    let next = normalize_base(url)
+        .ok_or_else(|| "线路地址无效（需要纯 HTTPS 站点地址，禁止内网）".to_string())?;
+    if !custom && !crate::lines::is_fixed(&next) && !crate::lines::is_trusted_mirror(&next) {
+        return Err("线路不在固定线路或可信发布页清单中".into());
+    }
+    let mut current = BASE.write().map_err(|_| "线路设置锁失败")?;
+    let previous = current.base.clone();
+    let file = BASE_FILE.read().map_err(|_| "线路配置锁失败")?;
+    save_line(&mut current, LineConfig { base: next.clone(), custom: custom && next != DEFAULT_BASE }, file.as_deref())?;
     drop(current);
     if previous != next {
         crate::playback_log::record(
@@ -143,7 +185,7 @@ fn env_proxy_set() -> bool {
 
 /// 应用层最终采用的显式代理（不含环境变量——那部分交给 reqwest）。
 /// 优先级：`HGHUBX_PROXY` > 进程环境变量（reqwest 处理）> Linux GNOME gsettings。
-fn detected_proxy() -> Option<String> {
+fn system_explicit_proxy() -> Option<String> {
     if let Some(p) = proxy_override() {
         return Some(p);
     }
@@ -274,7 +316,7 @@ fn system_proxy_enabled() -> bool {
 /// 注意：reqwest 的 `system-proxy` 只在构建时读一次注册表 / 环境变量。代理软件被关掉后，
 /// 旧客户端仍会往 `127.0.0.1:7897` 建隧道，症状是满屏 `tunnel error: failed to create
 /// underlying connection`（浏览器却是通的，因为它每次都重读系统代理）。所以这里允许重建。
-fn build_client(host: &str, addrs: &[SocketAddr]) -> Result<reqwest::Client, String> {
+fn build_client(host: &str, addrs: &[SocketAddr], route: &ProxyRoute) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         .user_agent(UA)
         .timeout(Duration::from_secs(20))
@@ -287,16 +329,63 @@ fn build_client(host: &str, addrs: &[SocketAddr]) -> Result<reqwest::Client, Str
     if !addrs.is_empty() {
         builder = builder.resolve_to_addrs(host, addrs);
     }
-    if let Some(p) = detected_proxy() {
-        // 错误信息不能含原始代理 URL（其中可能有用户名/密码）。
-        let proxy = reqwest::Proxy::all(&p).map_err(|_| "代理配置无效（已隐藏原始值）")?;
-        builder = builder.proxy(proxy);
+    if route.mode == crate::proxy::Mode::Off {
+        builder = builder.no_proxy();
+    } else if let Some(proxy) = &route.explicit {
+        let proxy = reqwest::Proxy::all(proxy).map_err(|_| "代理配置无效（已隐藏原始值）")?;
+        builder = builder.no_proxy().proxy(proxy);
     }
-    builder
-        .build()
-        .map_err(|_| "无法创建 HTTP 客户端".to_string())
+    builder.build().map_err(|_| "无法创建 HTTP 客户端".to_string())
 }
 
+/// One immutable selection is used for DNS, cache identity and client creation.
+/// An in-flight request may finish on its old route; it cannot populate the new
+/// configuration's cache entry after the user saves a different proxy.
+struct ProxyRoute {
+    mode: crate::proxy::Mode,
+    explicit: Option<String>,
+    active: bool,
+    generation: u64,
+}
+
+impl ProxyRoute {
+    fn for_config(config: &crate::proxy::Config, target: &url::Url) -> Self {
+        use crate::proxy::Mode;
+        let explicit = match config.mode {
+            Mode::Off => None,
+            Mode::Custom => Some(config.url.clone()),
+            Mode::System => system_explicit_proxy(),
+        };
+        let active = match config.mode {
+            Mode::Off => false,
+            Mode::Custom => true,
+            Mode::System => explicit.is_some() || system_proxy_routes_target(target),
+        };
+        Self { mode: config.mode, explicit, active, generation: CLIENT_GENERATION.load(Ordering::Acquire) }
+    }
+
+    fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        self.mode.hash(&mut hash);
+        self.explicit.hash(&mut hash);
+        hash.finish()
+    }
+
+    fn label(&self) -> String {
+        if self.mode == crate::proxy::Mode::Off {
+            "direct".into()
+        } else if let Some(proxy) = &self.explicit {
+            redact_proxy(proxy)
+        } else if self.active {
+            "system".into()
+        } else {
+            "direct".into()
+        }
+    }
+}
+
+static CLIENT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 const CLIENT_TTL: Duration = Duration::from_secs(30);
 type ClientCache = HashMap<String, (Instant, Arc<reqwest::Client>)>;
 static CLIENTS: Lazy<Mutex<ClientCache>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -316,25 +405,26 @@ async fn client_for(raw: &str) -> Result<(url::Url, Arc<reqwest::Client>), Strin
     client_for_dns(raw, false).await
 }
 
-/// Apple 平台复用 reqwest 的底层匹配器，区分 HTTP/HTTPS、NO_PROXY 和系统 SOCKS-only 配置。
+/// Keep Apple's existing per-target NO_PROXY/per-scheme/system matching.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-fn proxy_active(target: &url::Url) -> bool {
-    if detected_proxy().is_some() {
-        return true;
-    }
+fn system_proxy_routes_target(target: &url::Url) -> bool {
     crate::apple_proxy::routes_target(
         &hyper_util::client::proxy::matcher::Matcher::from_system(),
         target.as_str(),
     )
 }
 
-/// 其他平台：显式代理、进程环境变量、Linux GNOME 或 Windows 系统代理。
-/// 有代理时域名交给代理解析，本地不再做 DNS 固定与 IP 校验（被污染的 DNS 不影响代理链路）。
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-fn proxy_active(_target: &url::Url) -> bool {
-    detected_proxy().is_some()
-        || env_proxy_set()
-        || windows_proxy_enabled()
+fn system_proxy_routes_target(_target: &url::Url) -> bool {
+    env_proxy_set() || windows_proxy_enabled()
+}
+
+fn proxy_active(target: &url::Url) -> bool {
+    ProxyRoute::for_config(&crate::proxy::snapshot(), target).active
+}
+
+fn client_key(strict: bool, host: &str, port: u16, public_dns: bool, route: &ProxyRoute) -> String {
+    format!("{strict}:{host}:{port}:{public_dns}:{}:{:x}:{}", route.active, route.fingerprint(), route.generation)
 }
 
 async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<reqwest::Client>), String> {
@@ -342,8 +432,9 @@ async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<re
     let target = network_policy::parse_target_with_mode(raw, strict)?;
     let host = target.host_str().ok_or("目标缺少主机名")?;
     let port = target.port_or_known_default().ok_or("目标端口无效")?;
-    let proxy = proxy_active(&target);
-    let key = format!("{strict}:{host}:{port}:{public_dns}:{proxy}");
+    let route = ProxyRoute::for_config(&crate::proxy::snapshot(), &target);
+    let proxy = route.active;
+    let key = client_key(strict, host, port, public_dns, &route);
     {
         let cache = CLIENTS.lock().map_err(|_| "HTTP 客户端锁失败")?;
         if let Some(http) = cached_client(&cache, &key, Instant::now()) {
@@ -354,7 +445,7 @@ async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<re
         // 有代理：跳过本地解析与 IP 校验，addrs 留空，域名交给代理。
         (Vec::new(), CLIENT_TTL)
     } else if public_dns {
-        let resolver = build_client(crate::media_dns::HOST, &crate::media_dns::BOOTSTRAP)?;
+        let resolver = build_client(crate::media_dns::HOST, &crate::media_dns::BOOTSTRAP, &route)?;
         let resolution = crate::media_dns::resolve(&resolver, host, port).await?;
         network_policy::check_addresses_with_mode(&resolution.addresses, strict)?;
         (resolution.addresses, CLIENT_TTL.min(resolution.ttl))
@@ -363,7 +454,7 @@ async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<re
     } else {
         (Vec::new(), CLIENT_TTL)
     };
-    let http = Arc::new(build_client(host, &addrs)?);
+    let http = Arc::new(build_client(host, &addrs, &route)?);
     let now = Instant::now();
     let mut cache = CLIENTS.lock().map_err(|_| "HTTP 客户端锁失败")?;
     // 同时到达的请求可能已完成解析；不延长已有结果的有效期。
@@ -379,6 +470,8 @@ async fn client_for_dns(raw: &str, public_dns: bool) -> Result<(url::Url, Arc<re
 }
 
 pub fn refresh_client() {
+    // Builders still resolving DNS must not repopulate the new generation.
+    CLIENT_GENERATION.fetch_add(1, Ordering::AcqRel);
     if let Ok(mut cache) = CLIENTS.lock() {
         cache.clear();
     }
@@ -506,7 +599,31 @@ pub fn err_text(e: &reqwest::Error) -> String {
         }
         src = s.source();
     }
-    out
+    redact_error_proxy_auth(&out)
+}
+
+/// Transport source chains are not guaranteed to redact proxy userinfo. Remove
+/// userinfo from embedded URLs while keeping hosts and useful failure details.
+fn redact_error_proxy_auth(message: &str) -> String {
+    let mut output = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(separator) = rest.find("://") {
+        let authority_start = separator + 3;
+        output.push_str(&rest[..authority_start]);
+        rest = &rest[authority_start..];
+        let authority_end = rest.find(|ch: char| ch.is_whitespace() || matches!(ch, '/' | '?' | '#' | '\'' | '"' | '<' | '>'))
+            .unwrap_or(rest.len());
+        let authority = &rest[..authority_end];
+        if let Some(at) = authority.rfind('@') {
+            output.push_str("[redacted]@");
+            output.push_str(&authority[at + 1..]);
+        } else {
+            output.push_str(authority);
+        }
+        rest = &rest[authority_end..];
+    }
+    output.push_str(rest);
+    output
 }
 
 #[cfg(test)]
@@ -832,6 +949,103 @@ fn verdict(dns: &Value, tcp: &Value, http: &Value) -> (&'static str, String, Vec
     ("unknown", "信息不足：HTTP 请求和 TCP 探测均未给出可归类结果".into(), vec![])
 }
 
+/// Editable URL is returned only to the settings form; effective is always redacted.
+pub fn proxy_state() -> Value {
+    let config = crate::proxy::snapshot();
+    let target = url::Url::parse(&base()).expect("validated base");
+    let route = ProxyRoute::for_config(&config, &target);
+    let effective = if !route.active {
+        None
+    } else if let Some(explicit) = &route.explicit {
+        Some(redact_proxy(explicit))
+    } else {
+        ["https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"]
+            .iter().find_map(|key| std::env::var(key).ok().filter(|value| !value.trim().is_empty()))
+            .map(|value| redact_proxy(&value))
+            .or_else(|| Some("system".to_owned()))
+    };
+    json!({
+        "mode": config.mode.as_str(), "url": config.url, "effective": effective,
+        "system_proxy": system_proxy_enabled(), "env_proxy": env_proxy_set(),
+    })
+}
+
+fn healthy_proxy_response(status: u16, body: &[u8]) -> bool {
+    if status != 200 { return false; }
+    serde_json::from_slice::<Value>(body).is_ok_and(|value| {
+        value.get("status").and_then(Value::as_i64) == Some(1)
+            && value.get("data").is_some_and(crate::lines::healthy_video_data)
+    })
+}
+
+/// Probe the same anonymous edge envelope as line health, using an unsaved route.
+/// A draft never mutates app settings or cached clients. Bound the whole request,
+/// including DNS, redirects and body, and do not echo untrusted response text.
+pub async fn test_proxy(mode: &str, url: &str) -> Value {
+    let config = match crate::proxy::Config::for_test(mode, url) {
+        Ok(config) => config,
+        Err(error) => return json!({"ok": false, "ms": 0, "error": error}),
+    };
+    let origin = base();
+    let started = Instant::now();
+    let result = tokio::time::timeout(Duration::from_secs(8),
+        probe_proxy_origin(&origin, &config, network_policy::strict_security())).await;
+    let mut value = match result {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => json!({"ok": false, "error": error}),
+        Err(_) => json!({"ok": false, "error": "代理连通性测试超时（8 秒）"}),
+    };
+    value["ms"] = json!(started.elapsed().as_millis() as u64);
+    value
+}
+
+async fn probe_proxy_origin(origin: &str, config: &crate::proxy::Config, strict: bool) -> Result<Value, String> {
+    let mut next = network_policy::parse_target_with_mode(&format!("{origin}/api/edge/request"), strict)?;
+    let envelope = json!({ "method": "GET", "path": "/api/videos?page=1&size=1", "body": "", "content_type": "" });
+    for hop in 0..=5 {
+        let route = ProxyRoute::for_config(config, &next);
+        let addresses = if strict && !route.active { network_policy::resolve_target(&next, strict).await? } else { Vec::new() };
+        let client = build_client(next.host_str().ok_or("目标缺少主机名")?, &addresses, &route)?;
+        let response = client.post(next.clone())
+            .header("Accept", "application/json")
+            .header("Referer", format!("{origin}/"))
+            .json(&envelope).send().await.map_err(proxy_probe_error)?;
+        let status = response.status().as_u16();
+        if response.status().is_redirection() {
+            if hop == 5 { return Err("重定向次数超过限制".into()) }
+            let location = response.headers().get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok()).ok_or("重定向缺少有效 Location")?;
+            next = edge_redirect_target(&next, status, location, true)?;
+            continue;
+        }
+        if status != 200 {
+            return Ok(json!({"ok": false, "status": status, "via": route.label(), "error": "视频接口返回错误状态码"}));
+        }
+        let mut response = response;
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(proxy_probe_error)? {
+            if body.len() + chunk.len() > 1024 * 1024 { return Err("视频接口响应超过测试大小限制".into()) }
+            body.extend_from_slice(&chunk);
+        }
+        let ok = healthy_proxy_response(status, &body);
+        return Ok(if ok {
+            json!({"ok": true, "status": status, "via": route.label()})
+        } else {
+            json!({"ok": false, "status": status, "via": route.label(), "error": "接口未返回有效视频列表数据"})
+        });
+    }
+    Err("重定向次数超过限制".into())
+}
+
+fn proxy_probe_error(error: reqwest::Error) -> String {
+    // reqwest's nested transport errors can contain the configured proxy URL.
+    // Report the useful category without copying a credential-bearing address.
+    if error.is_timeout() { "代理连通性测试超时" }
+    else if error.is_connect() { "代理或目标连接失败，请检查地址、认证信息和网络" }
+    else if error.is_body() || error.is_decode() { "视频接口响应读取失败" }
+    else { "代理连通性测试请求失败" }.into()
+}
+
 /// 网络自检：DNS / TCP / HTTP / 代理环境变量，用于远程定位「打不开」。
 ///
 /// 结论直接给在 `verdict` / `summary` / `advice` 里，用户复制出去就能看懂。
@@ -914,6 +1128,8 @@ pub async fn diagnose() -> Value {
             "HGHUBX_PROXY": proxy_override().map(|p| redact_proxy(&p)),
             "GNOME_PROXY": gnome_proxy().map(|p| redact_proxy(&p)),
             "system_proxy": system_proxy_enabled(),
+            "app_proxy_mode": crate::proxy::mode().as_str(),
+            "app_proxy": crate::proxy::custom_url().as_deref().map(redact_proxy),
         },
         "runtime": {
             "os": std::env::consts::OS,
@@ -1227,6 +1443,75 @@ pub async fn fetch_bytes(url: &str) -> Result<(Option<String>, Vec<u8>), String>
 mod tests {
     use super::*;
 
+    #[test]
+    fn transport_errors_redact_proxy_auth_without_hiding_failure_category() {
+        let raw = "error sending request for url (https://example.com/) ← proxy http://demo:secret@[::1]:7897 refused; socks5h://name:token@proxy.example:1080/path";
+        let safe = redact_error_proxy_auth(raw);
+        assert!(!safe.contains("demo") && !safe.contains("secret") && !safe.contains("name:token"));
+        assert!(safe.contains("https://example.com/") && safe.contains("[::1]:7897 refused"));
+        assert!(safe.contains("socks5h://[redacted]@proxy.example:1080/path"));
+        assert_eq!(redact_error_proxy_auth("tls handshake eof"), "tls handshake eof");
+    }
+
+    #[test]
+    fn proxy_probe_checks_feed_envelope_instead_of_http_status_only() {
+        let valid = json!({"status": 1, "data": {"items": [{"id": 1, "title": "fixture"}], "pagination": {"page": 1, "size": 1, "pages": 1, "total": 1}}});
+        assert!(healthy_proxy_response(200, valid.to_string().as_bytes()));
+        assert!(!healthy_proxy_response(403, valid.to_string().as_bytes()));
+        for body in [b"<html>homepage</html>".as_slice(), br#"{"status":0,"data":{}}"#, br#"{"status":1,"data":[]}"#, br#"{"status":1,"data":{"items":[],"pagination":{}}}"#] {
+            assert!(!healthy_proxy_response(200, body));
+        }
+    }
+
+    #[test]
+    fn proxy_cache_identity_changes_with_mode_and_address_without_exposing_secrets() {
+        let target = url::Url::parse("https://example.com/").unwrap();
+        let custom = crate::proxy::Config::for_test("custom", "http://name:{{PASSWORD_pp0rajep}}@127.0.0.1:7897").unwrap();
+        let route = ProxyRoute::for_config(&custom, &target);
+        let first = client_key(true, "example.com", 443, false, &route);
+        assert!(!first.contains("{{PASSWORD_pp0rajep}}"));
+        assert_eq!(route.label(), "http://127.0.0.1:7897");
+        for config in [crate::proxy::Config::for_test("off", "").unwrap(), crate::proxy::Config::for_test("custom", "http://127.0.0.1:7898").unwrap()] {
+            let changed = ProxyRoute::for_config(&config, &target);
+            assert_ne!(first, client_key(true, "example.com", 443, false, &changed));
+        }
+        assert!(!ProxyRoute::for_config(&crate::proxy::Config::for_test("off", "").unwrap(), &target).active);
+    }
+
+    #[tokio::test]
+    async fn proxy_probe_uses_post_envelope_and_does_not_save_draft() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let serving = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request = String::new(); reader.read_line(&mut request).unwrap();
+            let mut length = 0; let mut auth = false;
+            loop {
+                let mut line = String::new(); reader.read_line(&mut line).unwrap();
+                if line.trim().is_empty() { break; }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") { length = value.trim().parse::<usize>().unwrap(); }
+                if line.to_ascii_lowercase().starts_with("authorization:") { auth = true; }
+            }
+            let mut body = vec![0; length]; reader.read_exact(&mut body).unwrap();
+            let data = json!({"status":1,"data":{"items":[],"pagination":{"page":1,"size":1,"pages":0,"total":0}}}).to_string();
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{data}", data.len()).unwrap();
+            (request, serde_json::from_slice::<Value>(&body).unwrap(), auth)
+        });
+        let before = crate::proxy::snapshot();
+        let config = crate::proxy::Config::for_test("custom", &format!("http://{address}")).unwrap();
+        // Host has no DNS record; only the explicitly supplied HTTP proxy can answer.
+        let result = probe_proxy_origin("http://unresolved.fixture.invalid", &config, false).await.unwrap();
+        assert_eq!(result["ok"], true);
+        let (request, body, auth) = serving.join().unwrap();
+        assert!(request.starts_with("POST http://unresolved.fixture.invalid/api/edge/request HTTP/1.1"));
+        assert_eq!(body, json!({"method":"GET","path":"/api/videos?page=1&size=1","body":"","content_type":""}));
+        assert!(!auth);
+        assert!(crate::proxy::snapshot() == before);
+    }
+
     #[tokio::test]
     #[ignore = "联网测试：需要 HGHUBX_TEST_MEDIA_URL 为当前有效的媒体地址"]
     async fn media_recovers_from_failed_system_dns() {
@@ -1242,7 +1527,7 @@ mod tests {
             .unwrap();
         refresh_client();
         CLIENTS.lock().unwrap().insert(
-            format!("{}:{host}:{port}:false", network_policy::strict_security()),
+            client_key(network_policy::strict_security(), host, port, false, &ProxyRoute::for_config(&crate::proxy::snapshot(), &target)),
             (Instant::now() + CLIENT_TTL, Arc::new(failed_client)),
         );
         let (_, bytes) = fetch_bytes(&raw).await.expect("备用 DNS 应恢复真实媒体下载");
@@ -1529,6 +1814,41 @@ mod tests {
         ] {
             assert_eq!(persisted_base(raw), None, "{raw}");
         }
+    }
+
+    #[test]
+    fn custom_line_consent_only_survives_explicit_v2_configuration() {
+        for raw in [
+            r#"{"base":"https://mirror.fixture.invalid","custom":true}"#,
+            r#"{"v":1,"base":"https://mirror.fixture.invalid","custom":true}"#,
+            r#"{"v":2,"base":"https://mirror.fixture.invalid"}"#,
+            r#"{"v":2,"base":"https://mirror.fixture.invalid","custom":false}"#,
+        ] {
+            let config = persisted_line(raw).unwrap();
+            assert_eq!(config.base, "https://mirror.fixture.invalid");
+            assert!(!config.custom);
+        }
+        assert!(persisted_line(r#"{"v":2,"base":"https://mirror.fixture.invalid/","custom":true}"#).unwrap().custom);
+        assert!(!persisted_line(r#"{"v":2,"base":"https://huangguoai.com","custom":true}"#).unwrap().custom);
+    }
+
+    #[test]
+    fn custom_line_round_trip_and_failed_save_preserve_previous_selection() {
+        let dir = std::env::temp_dir().join(format!("hghubx-line-save-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("line.json");
+        let next = LineConfig { base: "https://mirror.fixture.invalid".into(), custom: true };
+        let mut current = LineConfig::default();
+        save_line(&mut current, next.clone(), Some(&path)).unwrap();
+        assert_eq!(persisted_line(&std::fs::read_to_string(&path).unwrap()), Some(next.clone()));
+        let failed_path = dir.join("missing").join("line.json");
+        assert!(save_line(&mut current, LineConfig::default(), Some(&failed_path)).is_err());
+        assert_eq!(current, next);
+        assert_eq!(persisted_line(&std::fs::read_to_string(&path).unwrap()), Some(next));
+        save_line(&mut current, LineConfig::default(), Some(&path)).unwrap();
+        assert_eq!(persisted_line(&std::fs::read_to_string(&path).unwrap()), Some(LineConfig::default()));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test]

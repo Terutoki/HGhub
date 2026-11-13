@@ -14,14 +14,14 @@ import { createServer as createViteServer } from "vite";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: args } = parseArgs({ options: {
   "media-dir": { type: "string" }, output: { type: "string" }, "browser-executable": { type: "string" },
-  scenarios: { type: "string", default: "seek,legacy,stall,lifecycle,mms,gesture" }, help: { type: "boolean" },
+  scenarios: { type: "string", default: "seek,legacy,stall,lifecycle,mms,gesture,proxy" }, help: { type: "boolean" },
 } });
 if (args.help) {
-  console.log("pnpm test:playback [--media-dir DIR] [--output NEW_DIR] [--browser-executable PATH] [--scenarios seek,legacy,stall,lifecycle,mms,gesture]");
+  console.log("pnpm test:playback [--media-dir DIR] [--output NEW_DIR] [--browser-executable PATH] [--scenarios seek,legacy,stall,lifecycle,mms,gesture,proxy]");
   process.exit(0);
 }
 const scenarios = args.scenarios.split(",");
-assert(scenarios.length && scenarios.every(s => ["seek", "legacy", "stall", "lifecycle", "mms", "gesture"].includes(s)), "Unknown scenario");
+assert(scenarios.length && scenarios.every(s => ["seek", "legacy", "stall", "lifecycle", "mms", "gesture", "proxy"].includes(s)), "Unknown scenario");
 const output = resolve(args.output || join(root, "test-results", "playback", new Date().toISOString().replace(/[:.]/g, "-")));
 await mkdir(dirname(output), { recursive: true });
 await mkdir(output); // Refuse to overwrite artifacts from an earlier run.
@@ -374,6 +374,76 @@ async function lifecycleCheck(page) {
   return { feed, legacy, late_mount_paused: true };
 }
 
+async function proxyRecoveryCheck(page) {
+  const players = [];
+  for (const legacy of [false, true]) {
+    let broken = true, release, held;
+    const gate = new Promise(done => { release = done; });
+    const intercepted = new Promise(done => { held = done; });
+    await page.route("**/hls?*", async route => {
+      if (broken) {
+        held(); await gate;
+        return route.fulfill({ status: 404, headers: { "Access-Control-Allow-Origin": "*" }, body: "manifest unavailable" });
+      }
+      const response = await route.fetch({ url: fixtureMediaUrl(route.request().url()) });
+      return route.fulfill({ response });
+    });
+    try {
+      await page.goto(`${report.ui}/tests/player-seek.html?diagnostics=1&proxy=${encodeURIComponent(report.media)}${legacy ? "&legacy=1" : ""}`);
+      await page.waitForFunction(() => window.playerSeekFixture && document.querySelector("video"));
+      await intercepted;
+      await page.evaluate(() => window.playerSeekFixture.setLogging(true));
+      release();
+      await page.waitForFunction(() => window.playerSeekFixture.logs.some(e => e.event === "hls.error" && e.data.detail === "manifestLoadError" && e.data.fatal));
+      assert.equal(await page.locator("video").evaluate(v => v.currentTime), 0, "Fault must prevent initial playback");
+      broken = false;
+      await page.evaluate(() => window.dispatchEvent(new Event("hg:proxy-changed")));
+      await page.waitForFunction(() => document.querySelector("video").currentTime > 1 && !document.querySelector("video").paused);
+
+      // A subsequent proxy change must retain the same DOM video, current episode,
+      // playback position and the user's paused state.
+      await page.locator("video").evaluate(v => { v.pause(); v.currentTime = 20; window.__proxyVideo = v; });
+      await page.waitForFunction(() => !document.querySelector("video").seeking && document.querySelector("video").readyState >= 2);
+      const before = (await getLogs(page)).filter(e => e.event === "proxy.restored").length;
+      await page.evaluate(() => window.dispatchEvent(new Event("hg:proxy-changed")));
+      await page.waitForFunction(before => window.playerSeekFixture.logs.filter(e => e.event === "proxy.restored").length > before, before);
+      await page.waitForFunction(() => document.querySelector("video").readyState >= 2);
+      const paused = await page.locator("video").evaluate(v => ({ paused: v.paused, time: v.currentTime, sameElement: v === window.__proxyVideo }));
+      assert(paused.paused && Math.abs(paused.time - 20) < 0.5 && paused.sameElement, `Pause/position must survive: ${JSON.stringify(paused)}`);
+
+      // Hidden pages reload metadata but must not start playing until reactivated.
+      await page.evaluate(() => window.playerSeekFixture.setActive(false));
+      await page.evaluate(() => window.dispatchEvent(new Event("hg:proxy-changed")));
+      await page.waitForFunction(() => window.playerSeekFixture.engineState().levels > 0);
+      assert(await page.locator("video").evaluate(v => v.paused), "Hidden retry must stay paused");
+      await page.evaluate(() => window.playerSeekFixture.setActive(true));
+      await page.waitForFunction(() => document.querySelector("video").readyState >= 2);
+      assert(await page.locator("video").evaluate(v => v.paused), "Reactivation must retain manual pause");
+      await page.getByRole("button", { name: "播放", exact: true }).first().click();
+      await page.waitForFunction(() => !document.querySelector("video").paused && document.querySelector("video").currentTime > 20);
+      const playingAt = await page.locator("video").evaluate(v => v.currentTime);
+      const playingRetries = (await getLogs(page)).filter(e => e.event === "proxy.restored").length;
+      await page.evaluate(() => window.dispatchEvent(new Event("hg:proxy-changed")));
+      await page.waitForFunction(before => window.playerSeekFixture.logs.filter(e => e.event === "proxy.restored").length > before, playingRetries);
+      await page.waitForFunction(time => !document.querySelector("video").paused && document.querySelector("video").currentTime >= time, playingAt);
+      const logs = await getLogs(page);
+      const current = logs.filter(e => e.data.video_id).map(e => e.data.video_id);
+      assert(current.every(id => id === 991), "Proxy save must retain current video");
+      players.push({ player: legacy ? "legacy" : "feed", fatal_manifest_recovered: true, paused_time: paused.time,
+        same_video_element: paused.sameElement, hidden_stayed_paused: true, playing_resumed: true });
+    } finally { release(); await page.unroute("**/hls?*"); }
+  }
+
+  // API resolution can fail before a video element exists. Retrying must not
+  // depend on mounting the media engine or navigating away from the current item.
+  await page.goto(`${report.ui}/tests/player-seek.html?diagnostics=1&api-failure=1&proxy=${encodeURIComponent(report.media)}`);
+  await page.getByText("fixture playback API unavailable", { exact: true }).waitFor();
+  assert.equal(await page.locator("video").count(), 0);
+  await page.evaluate(() => { window.playerSeekFixture.rejectPlaybackApi = false; window.dispatchEvent(new Event("hg:proxy-changed")); });
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime > 1);
+  return { players, failed_api_resolution_retried: true };
+}
+
 try {
   let mediaDir = args["media-dir"] && resolve(args["media-dir"]);
   if (!mediaDir) {
@@ -412,7 +482,7 @@ try {
     const result = { name, status: "running", started: new Date().toISOString() }; report.cases.push(result);
     let deadline;
     try {
-      const action = name === "gesture" ? gestureChecks(page) : name === "seek" || name === "legacy" ? seekChecks(page, name === "legacy") : name === "stall" ? stallCheck(page) : name === "mms" ? managedMediaCheck(page) : lifecycleCheck(page);
+      const action = name === "proxy" ? proxyRecoveryCheck(page) : name === "gesture" ? gestureChecks(page) : name === "seek" || name === "legacy" ? seekChecks(page, name === "legacy") : name === "stall" ? stallCheck(page) : name === "mms" ? managedMediaCheck(page) : lifecycleCheck(page);
       result.metrics = await Promise.race([action, new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("Scenario exceeded 45 seconds")), 45000); })]);
       assert.deepEqual(pageErrors, [], "Browser script errors");
       assert.deepEqual(externalRequests, [], "Unexpected external network requests");

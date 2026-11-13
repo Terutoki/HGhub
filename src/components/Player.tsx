@@ -6,6 +6,7 @@ import { fmtTime, platform, playlist } from "../api";
 import { mediaErrorMessage } from "../mediaErrors";
 import { mediaHost, mediaResource, observeHls, usePlayerDiagnostics } from "../playbackDiagnostics";
 import { usePlaybackActivity } from "../usePlaybackActivity";
+import { useProxyPlaybackRecovery } from "../useProxyPlaybackRecovery";
 import { useSeekInput } from "../useSeekInput";
 import PlaybackLock from "./PlaybackLock";
 import { ICompress, IExpand, ILockF, IPauseF, IPlayF, IVol, IVolMute } from "../icons";
@@ -36,6 +37,7 @@ export default function Player({
   const recoverCountRef = useRef(0);
   const { trace, requestSeek } = usePlayerDiagnostics(videoRef, hlsRef, { view: "post_detail", ...diagnosticContext, active, resource: mediaResource(src) });
   const activity = usePlaybackActivity(videoRef, hlsRef, { active, autoPlay: !!autoPlay, src, trace });
+  const proxyRecovery = useProxyPlaybackRecovery(videoRef, src, activity, trace);
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [time, setTime] = useState(0);
@@ -66,6 +68,7 @@ export default function Player({
     setErrMsg("");
     setWaiting(false);
     recoverCountRef.current = 0;
+    const resume = proxyRecovery.resume();
     const url = playlist(src);
     trace("source.load", { engine: Hls.isSupported() ? "hls.js" : "native", auto_play: autoPlay, resource: mediaResource(src), host: mediaHost(src) });
 
@@ -82,6 +85,7 @@ export default function Player({
         // Keep the same macOS seek workaround as the shared player.
         preferManagedMediaSource: false,
         autoStartLoad: false,
+        startPosition: resume?.time ?? -1,
         lowLatencyMode: false,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
@@ -100,8 +104,8 @@ export default function Player({
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (activity.isActive()) hls.startLoad();
-        if (autoPlay) activity.play("manifest_autoplay", true);
+        if (activity.isActive()) hls.startLoad(resume?.time ?? -1);
+        if (autoPlay && !resume) activity.play("manifest_autoplay", true);
       });
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         recoverCountRef.current = 0;
@@ -139,14 +143,14 @@ export default function Player({
     } else {
       // Safari / 部分 WebView 原生支持 HLS
       video.src = url;
-      if (autoPlay) activity.play("native_autoplay", true);
+      if (autoPlay && !resume) activity.play("native_autoplay", true);
     }
 
     return () => {
       trace("source.cleanup");
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     };
-  }, [src, autoPlay]);
+  }, [src, autoPlay, proxyRecovery.revision]);
 
   useEffect(() => {
     const video = videoRef.current;

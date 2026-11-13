@@ -263,7 +263,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     readBoot();
     window.addEventListener("hg:line-changed", readBoot);
-    return () => { active = false; window.removeEventListener("hg:line-changed", readBoot); };
+    window.addEventListener("hg:proxy-changed", readBoot);
+    return () => {
+      active = false;
+      window.removeEventListener("hg:line-changed", readBoot);
+      window.removeEventListener("hg:proxy-changed", readBoot);
+    };
   }, []);
 
   const setStrictSecurity = useCallback(async (on: boolean) => {
@@ -322,7 +327,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const bump = () => setLineEpoch((n) => n + 1);
     window.addEventListener("hg:line-changed", bump);
-    return () => window.removeEventListener("hg:line-changed", bump);
+    window.addEventListener("hg:proxy-changed", bump);
+    return () => {
+      window.removeEventListener("hg:line-changed", bump);
+      window.removeEventListener("hg:proxy-changed", bump);
+    };
   }, []);
 
   const setTab = useCallback((t: Tab) => { setTabRaw(t); setStack(s => s.length ? [] : s); }, []);

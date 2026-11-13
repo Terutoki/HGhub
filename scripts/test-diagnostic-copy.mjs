@@ -32,13 +32,14 @@ try {
         fixture.calls.push(command);
         if (command === "app_boot") return { strict_security: true, base: "https://fixture.invalid" };
         if (command === "line_state") return { base: "https://fixture.invalid", fixed: [] };
+        if (command === "proxy_state") return { mode: "custom", url: "http://127.0.0.1:7897", effective: "http://127.0.0.1:7897" };
         if (command === "playback_log_status") return { enabled: false, path: "playback.log", error: null };
         if (command === "playback_log_write" || command === "debug_log") return;
         if (command === "net_diag") {
           fixture.diagCalls++;
           await new Promise(done => setTimeout(done, fixture.delay));
           if (fixture.failDiag) throw "fixture: diagnostic unavailable";
-          return { verdict: "ok_proxy", summary: "应用 HTTP 请求已成功", host: "fixture.invalid", base: "https://fixture.invalid", dns: { count: 1 }, tcp: { ok: false, timeout: true, proxy_bypassed: true, family: "IPv6" }, http: { status: 200, proxy_configured: true }, runtime: { os: "linux", ver: "fixture" } };
+          return { verdict: "ok_proxy", summary: "应用 HTTP 请求已成功", host: "fixture.invalid", base: "https://fixture.invalid", dns: { count: 1 }, tcp: { ok: false, timeout: true, proxy_bypassed: true, family: "IPv6" }, http: { status: 200, proxy_configured: true }, env: { app_proxy_mode: "custom", app_proxy: "http://127.0.0.1:7897" }, runtime: { os: "linux", ver: "fixture" } };
         }
         if (command === "playback_log_read") {
           await new Promise(done => setTimeout(done, 30));
@@ -72,6 +73,7 @@ try {
   assert(first.nativeCopies[0].includes("【HGhubX 网络诊断】") && first.nativeCopies[0].includes('"status": 200'));
   assert(first.nativeCopies[0].includes("直连探测（绕过应用 HTTP 代理） · IPv6 · 超时"));
   assert(first.nativeCopies[0].includes("检测到匹配的应用 HTTP 代理配置"));
+  assert(first.nativeCopies[0].includes("── 应用代理") && first.nativeCopies[0].includes("自定义代理"));
   await page.getByText(/诊断已复制/).waitFor();
   report.passed.push("After 5.5 seconds of async diagnostics, copy the complete report through native IPC while web clipboard writes reject");
 

@@ -112,6 +112,15 @@ export function formatNetDiag(raw: Json): string {
   if (str(http.error)) lines.push(`${pad("错误")}${str(http.error)}`);
   lines.push("");
 
+  /* ── 应用代理 ── */
+  if (str(env.app_proxy_mode)) {
+    const labels: Record<string, string> = { system: "跟随系统", custom: "自定义代理", off: "直连" };
+    lines.push("── 应用代理 ──────────────────────");
+    lines.push(`${pad("模式")}${labels[str(env.app_proxy_mode)] || str(env.app_proxy_mode)}`);
+    if (str(env.app_proxy)) lines.push(`${pad("出口")}${str(env.app_proxy)}`);
+    lines.push("");
+  }
+
   /* ── 代理环境变量 ── */
   const envLines = Object.entries(env)
     .map(([k, v]) => `${k}=${v == null ? "-" : String(v)}`)

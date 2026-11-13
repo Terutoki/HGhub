@@ -80,6 +80,7 @@ pub async fn line_state() -> Result<Value, String> {
     Ok(json!({
         "base": base(),
         "default": crate::net::DEFAULT_BASE,
+        "custom": crate::net::is_custom_line(),
         "fixed": crate::lines::fixed(),
     }))
 }
@@ -91,10 +92,53 @@ pub async fn line_set(state: State<'_, Api>, url: String) -> Result<String, Stri
     *generation = generation.wrapping_add(1);
     let previous = base();
     let applied = crate::net::set_base(&url)?;
+    crate::net::refresh_client();
     if previous != applied {
         state.session.clear();
     }
     Ok(applied)
+}
+
+#[tauri::command]
+pub async fn line_custom_set(state: State<'_, Api>, url: String) -> Result<Value, String> {
+    let mut generation = LINE_SELECTION.lock().map_err(|_| "线路选择锁失败")?;
+    *generation = generation.wrapping_add(1);
+    let previous = base();
+    let applied = crate::net::set_custom_base(&url)?;
+    crate::net::refresh_client();
+    if previous != applied { state.session.clear(); }
+    Ok(json!({ "base": applied, "custom": crate::net::is_custom_line() }))
+}
+
+#[tauri::command]
+pub async fn line_reset(state: State<'_, Api>) -> Result<Value, String> {
+    let base = line_set(state, crate::net::DEFAULT_BASE.to_string()).await?;
+    Ok(json!({ "base": base, "custom": false }))
+}
+
+#[tauri::command]
+pub async fn proxy_state() -> Result<Value, String> {
+    Ok(crate::net::proxy_state())
+}
+
+#[tauri::command]
+pub async fn proxy_set(mode: String, url: String) -> Result<Value, String> {
+    // Serialize with line application: probes using the previous proxy must
+    // never switch the line after the new proxy has been saved.
+    let mut generation = LINE_SELECTION.lock().map_err(|_| "线路选择锁失败")?;
+    crate::proxy::set(&mode, &url)?;
+    *generation = generation.wrapping_add(1);
+    crate::net::refresh_client();
+    let state = crate::net::proxy_state();
+    crate::playback_log::record("proxy.changed", json!({
+        "mode": state.get("mode"), "proxy": state.get("effective"),
+    }));
+    Ok(state)
+}
+
+#[tauri::command]
+pub async fn proxy_test(mode: String, url: String) -> Result<Value, String> {
+    Ok(crate::net::test_proxy(&mode, &url).await)
 }
 
 /// 从地址发布页抓镜像线路（只在用户点开「线路」时调用）。
@@ -482,7 +526,10 @@ fn request_ios_orientation(landscape: bool) {
 #[tauri::command]
 pub async fn app_boot(state: State<'_, Api>) -> Result<Value, String> {
     let origin = base();
-    if crate::network_policy::strict_security() && state.session.token(&origin).is_some() {
+    if crate::network_policy::strict_security()
+        && state.session.token(&origin).is_some()
+        && !crate::net::trusted_auth_origin(&origin)
+    {
         let _ = crate::lines::verify_published_origin(&origin).await;
     }
     let origin = base();
